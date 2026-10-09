@@ -239,7 +239,7 @@
     const ct = res.headers.get('content-type') || '';
     const data = ct.includes('json') ? await res.json() : await res.text();
     if (res.status === 401 && path !== '/login' && path !== '/me') { showLogin(); throw new Error('Session expired – please log in again.'); }
-    if (!res.ok) throw new Error((data && data.error) || res.statusText);
+    if (!res.ok) throw new Error((typeof data === 'object' && data && data.error) || (typeof data === 'string' && data) || res.statusText || `Request failed (${res.status})`);
     return data;
   }
 
