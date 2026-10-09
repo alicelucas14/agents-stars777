@@ -303,7 +303,7 @@
       $('#current-user').textContent = `(${me.user})`;
       $('#login-view').hidden = true;
       $('#app').hidden = false;
-      if (!location.hash || location.hash === '#/' || location.hash === '#') location.hash = '#/posts';
+      if (!location.hash || location.hash === '#/' || location.hash === '#') location.hash = '#/dashboard';
       else route();
     } catch { showLogin(); }
   }
@@ -344,11 +344,149 @@
       else if (name === 'seo') await renderSeoSettings(arg);
       else if (name === 'settings') await renderSettings();
       else if (name === 'users') await renderUsers();
-      else await renderPosts();
+      else if (name === 'posts') await renderPosts();
+      else await renderDashboard();
     } catch (e) {
       view.innerHTML = `<div class="empty">Could not load this page: ${esc(e.message)}</div>`;
     }
     window.scrollTo(0, 0);
+  }
+
+  /* =========================================================
+     DASHBOARD
+     ========================================================= */
+  async function renderDashboard() {
+    const [posts, pages, seoData, statics, media, usersData] = await Promise.all([
+      api('/posts'), api('/pages'), api('/seo'),
+      api('/seo/pages').catch(() => []), api('/media').catch(() => []), api('/users').catch(() => ({ users: [] })),
+    ]);
+    const s = seoData.settings || {};
+    const siteUrl = seoData.siteUrl || state.siteUrl || '';
+    const published = posts.filter((p) => p.status === 'publish');
+    const drafts = posts.filter((p) => p.status === 'draft');
+    const content = [...posts.map((p) => ({ ...p, kind: 'post' })), ...pages.map((p) => ({ ...p, kind: 'page' }))];
+    const live = content.filter((p) => p.status === 'publish');
+
+    // SEO distribution across published posts + pages
+    const dist = { good: 0, ok: 0, bad: 0, none: 0 };
+    live.forEach((p) => { dist[scoreClass(p.seoScore)]++; });
+    const scored = live.filter((p) => p.seoScore != null);
+    const avg = scored.length ? Math.round(scored.reduce((a, p) => a + p.seoScore, 0) / scored.length) : null;
+    const noKw = live.filter((p) => !p.focusKeyword).length;
+    const attention = live.slice().sort((a, b) => (a.seoScore ?? -1) - (b.seoScore ?? -1)).filter((p) => (p.seoScore ?? 0) < 80).slice(0, 7);
+    const recent = content.slice().sort((a, b) => new Date(b.modified || b.date) - new Date(a.modified || a.date)).slice(0, 7);
+    const pct = (n) => (live.length ? (n / live.length) * 100 : 0);
+
+    // setup checklist
+    const head = String(s.headCode || '');
+    const v = s.verification || {};
+    const checks = [
+      { ok: /G-[A-Z0-9]{6,}|googletagmanager/i.test(head), t: 'Google Analytics (GA4)', d: 'Tracking code in Custom &lt;head&gt; code', href: '#/seo/webmaster' },
+      { ok: !!v.google, t: 'Google Search Console', d: 'Verification code', href: '#/seo/webmaster' },
+      { ok: !!v.bing, t: 'Bing Webmaster Tools', d: 'Verification code (also feeds ChatGPT search)', href: '#/seo/webmaster' },
+      { ok: !!(s.orgName && s.orgLogo), t: 'Organisation name &amp; logo', d: 'Shown in Google knowledge panel', href: '#/seo/social' },
+      { ok: (s.sameAs || []).length > 0, t: 'Social profiles', d: 'Links your brand across the web (AI SEO)', href: '#/seo/social' },
+      { ok: !!s.defaultOgImage, t: 'Default share image', d: 'Used when sharing on WhatsApp, Facebook, X', href: '#/seo/general' },
+      { ok: /^https:\/\//.test(siteUrl) && !/localhost|127\.0\.0\.1/.test(siteUrl), t: 'Live site URL (HTTPS)', d: esc(siteUrl || 'not set') + ' – set SITE_URL on the server', href: null },
+    ];
+    const done = checks.filter((c) => c.ok).length;
+
+    const hour = new Date().getHours();
+    const hello = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+    const ico = {
+      post: '<path d="M4 5h16M4 10h16M4 15h10M4 20h7"/>',
+      draft: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4z"/>',
+      page: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/>',
+      media: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 17-5-5-8 8"/>',
+      users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>',
+      seo: '<path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/>',
+    };
+    const stat = (id, icon, label, value, sub, href, tone = '') => `
+      <a class="dash-stat ${tone}" href="${href}" id="dash-stat-${id}">
+        <span class="dash-ico"><svg viewBox="0 0 24 24">${ico[icon]}</svg></span>
+        <span class="dash-stat-body"><span class="dash-stat-label">${label}</span><strong>${value}</strong><small>${sub}</small></span>
+      </a>`;
+    const editHref = (p) => `#/${KINDS[p.kind].edit}/${p.id}`;
+
+    view.innerHTML = `
+      <div class="dash-hero">
+        <div>
+          <h1>${hello}, ${esc(state.me)} 👋</h1>
+          <p>Here's what's happening on <a href="${esc(siteUrl || '/')}" target="_blank" rel="noopener">${esc(state.siteName || 'your site')}</a> today.</p>
+        </div>
+        <div class="dash-actions">
+          <a href="#/new" class="btn btn-primary" id="dash-new-post"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>New post</a>
+          <a href="#/new-page" class="btn" id="dash-new-page">New page</a>
+          <a href="#/media" class="btn" id="dash-media">Upload media</a>
+          <a href="/" target="_blank" rel="noopener" class="btn btn-ghost" id="dash-view-site">View site ↗</a>
+        </div>
+      </div>
+
+      <div class="dash-stats">
+        ${stat('published', 'post', 'Published posts', published.length, `${posts.length} total`, '#/posts')}
+        ${stat('drafts', 'draft', 'Drafts', drafts.length, drafts.length ? 'waiting to publish' : 'all caught up', '#/posts', drafts.length ? 'warn' : '')}
+        ${stat('pages', 'page', 'Pages', pages.length + statics.length, `${statics.length} original · ${pages.length} custom`, '#/pages')}
+        ${stat('media', 'media', 'Media files', media.length, 'images in library', '#/media')}
+        ${stat('users', 'users', 'Users', (usersData.users || []).length, 'with admin access', '#/users')}
+        ${stat('seo', 'seo', 'Average SEO score', avg == null ? '–' : `${avg}<small>/100</small>`, `based on ${scored.length} of ${live.length} analysed`, '#/posts', avg == null ? '' : scoreClass(avg))}
+      </div>
+
+      <div class="dash-grid">
+        <div class="card">
+          <div class="card-head">SEO health <span class="muted" style="font-weight:500;font-size:12.5px">${live.length} published posts &amp; pages</span></div>
+          <div class="card-body">
+            <div class="dash-bar" role="img" aria-label="SEO score distribution">
+              <span class="good" style="width:${pct(dist.good)}%"></span><span class="ok" style="width:${pct(dist.ok)}%"></span><span class="bad" style="width:${pct(dist.bad)}%"></span><span class="none" style="width:${pct(dist.none)}%"></span>
+            </div>
+            <div class="dash-legend">
+              <span><i class="good"></i>Good (80+) <b>${dist.good}</b></span>
+              <span><i class="ok"></i>Needs work (50–79) <b>${dist.ok}</b></span>
+              <span><i class="bad"></i>Poor (&lt;50) <b>${dist.bad}</b></span>
+              <span><i class="none"></i>Not analysed <b>${dist.none}</b></span>
+            </div>
+            <h3 class="dash-sub">Needs attention</h3>
+            ${attention.length ? `<ul class="dash-list">${attention.map((p) => `
+              <li>
+                ${scoreBadgeBtn(p.seoScore, p.id, p.kind, 'Click for recommendations')}
+                <a href="${editHref(p)}" class="dash-list-title">${esc(p.title)}</a>
+                <span class="muted dash-list-meta">${p.focusKeyword ? esc(p.focusKeyword) : '<span style="color:var(--danger)">no keyword</span>'}</span>
+              </li>`).join('')}</ul>` : '<div class="empty" style="padding:18px">🎉 Everything scores 80 or higher.</div>'}
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">Site setup <span class="pill ${done === checks.length ? 'ok' : 'accent'}">${done}/${checks.length}</span></div>
+          <div class="card-body">
+            <div class="dash-progress"><span style="width:${(done / checks.length) * 100}%"></span></div>
+            <ul class="dash-checks">${checks.map((c) => `
+              <li class="${c.ok ? 'ok' : 'todo'}">
+                <span class="dash-check">${c.ok ? '✓' : '!'}</span>
+                <span class="dash-check-body"><strong>${c.t}</strong><small>${c.d}</small></span>
+                ${!c.ok && c.href ? `<a href="${c.href}" class="btn btn-sm">Set up</a>` : ''}
+              </li>`).join('')}</ul>
+          </div>
+        </div>
+
+        <div class="card dash-wide">
+          <div class="card-head">Recent activity <a href="#/posts" class="btn btn-ghost btn-sm" style="margin-left:auto">All posts →</a></div>
+          <table class="posts">
+            <thead><tr><th>Title</th><th>Type</th><th class="col-seo">SEO</th><th>Last change</th></tr></thead>
+            <tbody>${recent.map((p) => `
+              <tr>
+                <td><a class="post-title" href="${editHref(p)}">${esc(p.title)}</a>${p.status === 'draft' ? ' <span class="status draft">Draft</span>' : ''}
+                  <div class="row-actions"><a href="${editHref(p)}">Edit</a>${p.status === 'publish' && p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">View</a>` : ''}</div></td>
+                <td><span class="pill">${p.kind === 'page' ? 'Page' : 'Post'}</span></td>
+                <td class="col-seo">${scoreBadgeBtn(p.seoScore, p.id, p.kind, 'Click for recommendations')}</td>
+                <td class="date-cell">${fmtDate(p.modified || p.date)}<small>${fmtTime(p.modified || p.date)}</small></td>
+              </tr>`).join('') || '<tr><td colspan="4"><div class="empty">No content yet.</div></td></tr>'}</tbody>
+          </table>
+        </div>
+      </div>`;
+
+    view.addEventListener('click', (e) => {
+      const diag = e.target.closest('[data-seo-diag]');
+      if (diag) { e.preventDefault(); openSeoDiagModal(diag.dataset.seoDiag, diag.dataset.seoKind || 'post'); }
+    });
   }
 
   /* =========================================================
