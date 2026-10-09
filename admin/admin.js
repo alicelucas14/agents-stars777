@@ -1850,7 +1850,7 @@
     } catch (e) {
       console.warn('Could not load social settings from server:', e);
     }
-    const s = {
+    let s = {
       enabled: !!settings.enabled,
       position: settings.position === 'right' ? 'right' : 'left',
       mobile: settings.mobile !== false,
