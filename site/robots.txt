@@ -1,0 +1,19 @@
+User-agent: *
+Disallow: /admin/
+Disallow: /api/
+
+# AI search / answer engines: allowed so the site can be cited in AI answers.
+# Delete a line to opt that crawler out.
+User-agent: GPTBot
+User-agent: OAI-SearchBot
+User-agent: ChatGPT-User
+User-agent: ClaudeBot
+User-agent: Claude-SearchBot
+User-agent: PerplexityBot
+User-agent: Google-Extended
+User-agent: Applebot-Extended
+Allow: /
+Disallow: /admin/
+Disallow: /api/
+
+Sitemap: https://agents.stars777.org/sitemap.xml

@@ -1,0 +1,67 @@
+{
+  "separator": "-",
+  "postTitle": "%title% %sep% %sitename%",
+  "pageTitle": "%title% %sep% %sitename%",
+  "archiveTitle": "%term% %sep% %sitename%",
+  "pagedTitle": "%term% %sep% Page %page% of %pages% %sep% %sitename%",
+  "defaultOgImage": "/wp-content/uploads/2024/07/Stars777-Logo.webp",
+  "twitterSite": "",
+  "facebookUrl": "",
+  "schemaType": "Organization",
+  "orgName": "Stars777",
+  "orgLogo": "/wp-content/uploads/2024/07/Stars777-Logo.webp",
+  "sameAs": [],
+  "articleSchema": "BlogPosting",
+  "verification": {
+    "google": "",
+    "bing": "",
+    "yandex": "",
+    "pinterest": "",
+    "baidu": ""
+  },
+  "headCode": "<!-- Google Analytics (GA4) -->\n<script async src=\"https://www.googletagmanager.com/gtag/js?id=G-SS0MNWTKWZ\"></script>\n<script>\n  window.dataLayer = window.dataLayer || [];\n  function gtag(){dataLayer.push(arguments);}\n  gtag('js', new Date());\n  gtag('config', 'G-SS0MNWTKWZ');\n  gtag('config', 'G-N4770T2SRR');\n</script>",
+  "index": {
+    "categories": true,
+    "tags": true,
+    "authors": true,
+    "paginated": true
+  },
+  "sitemap": {
+    "posts": true,
+    "pages": true,
+    "categories": true,
+    "tags": true,
+    "authors": false
+  },
+  "rss": true,
+  "robotsTxt": "",
+  "redirects": [],
+  "terms": {
+    "tags:agent-guide": {
+      "title": "",
+      "description": "",
+      "noindex": false
+    }
+  },
+  "pages": {
+    "/": {
+      "orig": {
+        "title": "Big Agents | Agency Plan | Stars777 Games",
+        "description": "Join our referral program, featuring Stars777 games. Become agents, refer new players, and earn rewards. Connect and start earning today!",
+        "robots": "index, follow, max-snippet:-1, max-video-preview:-1, max-image-preview:large",
+        "canonical": "https://agents.stars777.org/",
+        "ogTitle": "Big Agents | Agency Plan | Stars777 Games",
+        "ogDescription": "Join our referral program, featuring Stars777 games. Become agents, refer new players, and earn rewards. Connect and start earning today!",
+        "ogImage": "https://agents.stars777.org/wp-content/uploads/2024/07/Stars777-Logo.webp"
+      },
+      "title": "",
+      "description": "",
+      "canonical": "",
+      "ogTitle": "",
+      "ogDescription": "",
+      "ogImage": "",
+      "noindex": false,
+      "nofollow": false
+    }
+  }
+}

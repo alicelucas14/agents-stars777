@@ -1,0 +1,27 @@
+{
+  "name": "agents-stars777",
+  "version": "1.0.0",
+  "description": "Stars777 Big Agents site: static WordPress export + plugin-free blog CMS.",
+  "main": "server.js",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "build": "node -e \"console.log(require('./cms/render').buildAll())\"",
+    "import": "node tools/import-wp.js",
+    "mirror": "node tools/mirror.js",
+    "set-password": "node tools/set-password.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "cheerio": "^1.2.0",
+    "compression": "^1.8.2",
+    "express": "^4.22.3",
+    "multer": "^2.4.0",
+    "tinymce": "^7.9.3"
+  }
+}

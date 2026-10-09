@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Admin – Big Agents</title>
+  <link rel="icon" href="/wp-content/uploads/2024/07/Stars777-Logo-100x100.webp">
+  <link rel="stylesheet" href="/admin/admin.css">
+  <script src="/admin/tinymce/tinymce.min.js" referrerpolicy="origin"></script>
+</head>
+<body>
+  <!-- Login -->
+  <section id="login-view" class="login-view" hidden>
+    <form id="login-form" class="login-card" autocomplete="on">
+      <img src="/wp-content/uploads/2024/07/Stars777-Logo-300x300.webp" alt="" class="login-logo">
+      <h1>Big Agents Admin</h1>
+      <p class="muted">Sign in to manage your blog</p>
+      <label>Username<input id="login-username" name="username" autocomplete="username" required></label>
+      <label>Password<input id="login-password" name="password" type="password" autocomplete="current-password" required></label>
+      <p id="login-error" class="form-error" hidden></p>
+      <button id="login-submit" class="btn btn-primary btn-block" type="submit">Log in</button>
+      <a href="/" class="back-link">&larr; Back to site</a>
+    </form>
+  </section>
+
+  <!-- App -->
+  <div id="app" class="app" hidden>
+    <aside class="sidebar">
+      <a href="#/posts" class="brand">
+        <img src="/wp-content/uploads/2024/07/Stars777-Logo-100x100.webp" alt="">
+        <span>Big Agents</span>
+      </a>
+      <nav class="side-nav">
+        <a href="#/posts" data-nav="posts" id="nav-posts"><svg viewBox="0 0 24 24"><path d="M4 5h16M4 10h16M4 15h10M4 20h7"/></svg>All Posts</a>
+        <a href="#/new" data-nav="new" id="nav-new"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Add New Post</a>
+        <a href="#/pages" data-nav="pages" id="nav-pages"><svg viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></svg>Pages</a>
+        <a href="#/menu" data-nav="menu" id="nav-menu"><svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h12"/></svg>Menu</a>
+        <a href="#/media" data-nav="media" id="nav-media"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 17-5-5-8 8"/></svg>Media</a>
+        <a href="#/seo" data-nav="seo" id="nav-seo"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>SEO</a>
+        <a href="#/users" data-nav="users" id="nav-users"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>Users</a>
+        <a href="#/settings" data-nav="settings" id="nav-settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Settings</a>
+      </nav>
+      <div class="side-foot">
+        <a href="/" target="_blank" id="nav-view-site"><svg viewBox="0 0 24 24"><path d="M14 3h7v7M10 14 21 3M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>View site</a>
+        <button id="logout-btn" class="link-btn"><svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>Log out <span id="current-user" class="muted"></span></button>
+      </div>
+    </aside>
+    <main id="view" class="main"></main>
+  </div>
+
+  <!-- Media modal -->
+  <div id="media-modal" class="modal" hidden>
+    <div class="modal-card">
+      <header class="modal-head">
+        <h2>Select image</h2>
+        <button class="icon-btn" data-close aria-label="Close" id="media-modal-close">&times;</button>
+      </header>
+      <div class="modal-body">
+        <label class="dropzone" id="modal-dropzone">
+          <input type="file" accept="image/*" multiple hidden id="modal-file-input">
+          <strong>Drop images here</strong> or click to upload
+        </label>
+        <div class="media-grid" id="modal-media-grid"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SEO quick diagnostics modal -->
+  <div id="seo-modal" class="modal" hidden>
+    <div class="modal-card" style="max-width: 600px;">
+      <header class="modal-head">
+        <h2>SEO Recommendations &amp; Diagnosis</h2>
+        <button class="icon-btn" data-close aria-label="Close" id="seo-modal-close">&times;</button>
+      </header>
+      <div class="modal-body" id="seo-modal-body"></div>
+    </div>
+  </div>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <script src="/admin/admin.js"></script>
+</body>
+</html>

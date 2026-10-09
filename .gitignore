@@ -1,0 +1,6 @@
+node_modules/
+content/admin.json
+content/backup-*/
+*.tmp
+*.log
+.env
