@@ -13,6 +13,7 @@ const cheerio = require('cheerio');
 const cfg = require('./config');
 const store = require('./store');
 const seo = require('./seo');
+const social = require('./social');
 
 /* ---------- helpers ---------- */
 
@@ -96,7 +97,7 @@ function fill(tpl, map) {
 function writePage(rel, html) {
   const file = path.join(cfg.SITE_DIR, ...rel.split('/').filter(Boolean), 'index.html');
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, html);
+  fs.writeFileSync(file, social.inject(html));
 }
 
 /* ---------- shell compilation ---------- */

@@ -1,0 +1,11 @@
+{
+  "enabled": true,
+  "position": "left",
+  "mobile": true,
+  "links": {
+    "telegram": "https://t.me/stars777test",
+    "instagram": "https://instagram.com/stars777test",
+    "x": "https://x.com/stars777test",
+    "facebook": "https://www.facebook.com/stars777test"
+  }
+}

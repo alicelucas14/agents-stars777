@@ -340,6 +340,7 @@
       else if (name === 'new-page') await renderEditor(null, 'page');
       else if (name === 'edit-page') await renderEditor(arg, 'page');
       else if (name === 'menu') await renderMenu();
+      else if (name === 'social') await renderSocial();
       else if (name === 'media') await renderMedia();
       else if (name === 'seo') await renderSeoSettings(arg);
       else if (name === 'settings') await renderSettings();
@@ -1835,6 +1836,98 @@
     drawPreviews();
     drawRedirects();
     showTab(tab);
+  }
+
+  /* =========================================================
+     SOCIAL BAR
+     ========================================================= */
+  async function renderSocial() {
+    const { settings } = await api('/social');
+    let s = JSON.parse(JSON.stringify(settings));
+    const NETS = [
+      ['telegram', 'Telegram', 'https://t.me/yourchannel', '@yourchannel or full link'],
+      ['instagram', 'Instagram', 'https://www.instagram.com/yourpage', '@yourpage or full link'],
+      ['x', 'X (Twitter)', 'https://x.com/yourhandle', '@yourhandle or full link'],
+      ['facebook', 'Facebook', 'https://www.facebook.com/yourpage', 'page name or full link'],
+    ];
+    const tg = (id, on, label, hint) => `<label class="toggle" for="${id}"><input type="checkbox" id="${id}" ${on ? 'checked' : ''}><span class="tg" aria-hidden="true"></span><span class="tg-text"><strong>${label}</strong>${hint ? `<small>${hint}</small>` : ''}</span></label>`;
+
+    view.innerHTML = `
+      <div class="page-head"><h1>Social bar<span id="dirty-dot" class="dirty-dot" title="Unsaved changes" hidden></span></h1>
+        <span class="spacer"></span>
+        <button class="btn btn-primary" id="social-save">Save changes</button>
+      </div>
+      <p class="hint" style="margin:-8px 0 16px">A floating bar with your social links, shown on every page of the site. Only networks with a link are shown.</p>
+      <div class="settings-grid" style="max-width:1150px;grid-template-columns:minmax(0,1fr) minmax(320px,1fr)">
+        <div style="display:flex;flex-direction:column;gap:18px">
+          <div class="card"><div class="card-head">Display</div><div class="card-body">
+            ${tg('social-enabled', s.enabled, 'Show social bar on the website')}
+            <div class="field" style="margin-top:14px"><span>Position</span>
+              <div class="tabs" id="social-pos">
+                <button type="button" data-pos="left" id="social-pos-left" class="${s.position !== 'right' ? 'active' : ''}">Left side</button>
+                <button type="button" data-pos="right" id="social-pos-right" class="${s.position === 'right' ? 'active' : ''}">Right side</button>
+              </div></div>
+            ${tg('social-mobile', s.mobile, 'Show on mobile', 'small icons near the bottom of the screen')}
+          </div></div>
+          <div class="card"><div class="card-head">Links</div><div class="card-body">
+            ${NETS.map(([k, label, ph, hint]) => `<label class="field"><span>${label} <small>${hint}</small></span><input id="social-${k}" data-net="${k}" value="${esc(s.links[k] || '')}" placeholder="${ph}"></label>`).join('')}
+            <p class="hint" style="margin:0">Saving also adds these profiles to your site's schema (Organization → sameAs), which helps Google and AI search link them to your brand.</p>
+          </div></div>
+        </div>
+        <div class="card" style="position:sticky;top:20px"><div class="card-head">Live preview <span class="muted" style="font-weight:500;font-size:12.5px">hover the icons</span></div>
+          <div class="card-body" style="padding:0">
+            <iframe id="social-preview" title="Social bar preview" style="width:100%;height:380px;border:0;display:block;border-radius:0 0 12px 12px"></iframe>
+          </div>
+        </div>
+      </div>`;
+
+    const collect = () => ({
+      enabled: $('#social-enabled').checked,
+      mobile: $('#social-mobile').checked,
+      position: s.position,
+      links: Object.fromEntries(NETS.map(([k]) => [k, $(`#social-${k}`).value.trim()])),
+    });
+    const mock = (bar) => `<!doctype html><html><head><meta charset="utf-8"><style>
+      body{margin:0;font:14px/1.5 system-ui,sans-serif;background:#0f1220;color:#cfd3e0;min-height:100vh}
+      .hd{height:54px;background:#161a2b;display:flex;align-items:center;padding:0 22px;gap:18px;font-weight:700;color:#fff}
+      .hd i{width:46px;height:10px;border-radius:5px;background:#2a3050}.hd b{color:#ff9a1f}
+      .ct{max-width:440px;margin:28px auto;padding:0 70px}.ln{height:10px;border-radius:5px;background:#232842;margin:12px 0}
+      .hero{height:110px;border-radius:12px;background:linear-gradient(135deg,#ff6a00,#ff9a1f);opacity:.85;margin-bottom:18px}
+      .empty{position:absolute;inset:0;display:grid;place-items:center;color:#8a92a3}</style></head>
+      <body><div class="hd"><b>STARS777</b><i></i><i></i><i></i></div><div class="ct"><div class="hero"></div>
+      <div class="ln"></div><div class="ln" style="width:80%"></div><div class="ln" style="width:90%"></div><div class="ln" style="width:60%"></div></div>
+      ${bar || '<div class="empty">Add at least one link to see the bar</div>'}</body></html>`;
+    let t;
+    const refresh = () => {
+      clearTimeout(t);
+      t = setTimeout(async () => {
+        try { const { html } = await api('/social/preview', { method: 'POST', body: collect() }); $('#social-preview').srcdoc = mock(html); } catch {}
+      }, 250);
+    };
+
+    view.addEventListener('input', () => { setDirty(true); refresh(); });
+    view.addEventListener('change', () => { setDirty(true); refresh(); });
+    $('#social-pos').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-pos]');
+      if (!b) return;
+      s.position = b.dataset.pos;
+      $$('#social-pos button').forEach((x) => x.classList.toggle('active', x === b));
+      setDirty(true); refresh();
+    });
+    $('#social-save').onclick = async () => {
+      const b = $('#social-save');
+      busy(b, true, ' Saving…');
+      try {
+        const r = await api('/social', { method: 'PUT', body: collect() });
+        s = r.settings;
+        NETS.forEach(([k]) => { $(`#social-${k}`).value = s.links[k] || ''; }); // show normalised links
+        setDirty(false);
+        const n = Object.values(s.links).filter(Boolean).length;
+        toast(!s.enabled ? 'Saved. The social bar is <b>hidden</b> on the site.' : n ? `Saved. Social bar updated on ${r.updated} pages.${buildNote(r.build)}` : 'Saved, but no links are set so nothing is shown.');
+      } catch (ex) { toast(esc(ex.message), 'err'); }
+      busy(b, false);
+    };
+    refresh();
   }
 
   /* =========================================================

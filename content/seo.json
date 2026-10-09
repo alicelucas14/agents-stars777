@@ -5,12 +5,17 @@
   "archiveTitle": "%term% %sep% %sitename%",
   "pagedTitle": "%term% %sep% Page %page% of %pages% %sep% %sitename%",
   "defaultOgImage": "/wp-content/uploads/2024/07/Stars777-Logo.webp",
-  "twitterSite": "",
-  "facebookUrl": "",
+  "twitterSite": "@stars777test",
+  "facebookUrl": "https://www.facebook.com/stars777test",
   "schemaType": "Organization",
   "orgName": "Stars777",
   "orgLogo": "/wp-content/uploads/2024/07/Stars777-Logo.webp",
-  "sameAs": [],
+  "sameAs": [
+    "https://t.me/stars777test",
+    "https://instagram.com/stars777test",
+    "https://x.com/stars777test",
+    "https://www.facebook.com/stars777test"
+  ],
   "articleSchema": "BlogPosting",
   "verification": {
     "google": "",

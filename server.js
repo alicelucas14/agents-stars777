@@ -17,9 +17,11 @@ const render = require('./cms/render');
 const auth = require('./cms/auth');
 const seo = require('./cms/seo');
 const menu = require('./cms/menu');
+const social = require('./cms/social');
 
 auth.load(); // creates the first admin account if none exists
 try { seo.applyGlobalToStatic(); } catch (e) { console.warn('SEO head injection skipped:', e.message); }
+try { social.applyAll(); } catch (e) { console.warn('Social bar injection skipped:', e.message); }
 
 const app = express();
 app.disable('x-powered-by');
@@ -281,6 +283,28 @@ api.put('/seo', async (req, res, next) => {
     seo.save(updated);
     const staticUpdated = seo.applyGlobalToStatic();
     res.json({ settings: seo.get(), staticUpdated, build: await rebuild() });
+  } catch (e) { next(e); }
+});
+
+/* ---------- social bar ---------- */
+api.get('/social', (req, res) => res.json({ settings: social.get(), networks: social.ORDER.map((k) => ({ key: k, label: social.NETWORKS[k].label })) }));
+
+api.post('/social/preview', (req, res) => res.json({ html: social.block(social.clean(req.body || {}), { force: true }) }));
+
+api.put('/social', async (req, res, next) => {
+  try {
+    const s = social.save(req.body || {});
+    // also list the profiles in the Organization schema (sameAs) – helps Google & AI engines connect the brand
+    const cur = seo.get();
+    const urls = Object.values(s.links).filter(Boolean);
+    const sameAs = [...new Set([...(cur.sameAs || []), ...urls])];
+    const patch = { sameAs };
+    if (!cur.facebookUrl && s.links.facebook) patch.facebookUrl = s.links.facebook;
+    if (!cur.twitterSite && s.links.x) { const m = /(?:x|twitter)\.com\/@?([A-Za-z0-9_]{1,15})/i.exec(s.links.x); if (m) patch.twitterSite = '@' + m[1]; }
+    const seoChanged = sameAs.length !== (cur.sameAs || []).length || patch.facebookUrl || patch.twitterSite;
+    if (seoChanged) { seo.save({ ...cur, ...patch }); seo.applyGlobalToStatic(); }
+    const updated = social.applyAll();
+    res.json({ settings: s, updated, build: seoChanged ? await rebuild() : null });
   } catch (e) { next(e); }
 });
 
