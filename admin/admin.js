@@ -348,7 +348,8 @@
       else if (name === 'posts') await renderPosts();
       else await renderDashboard();
     } catch (e) {
-      view.innerHTML = `<div class="empty">Could not load this page: ${esc(e.message)}</div>`;
+      console.error('Route error for ' + name + ':', e);
+      view.innerHTML = `<div class="empty">Could not load this page: <code>${esc(e && (e.message || String(e)))}</code></div>`;
     }
     window.scrollTo(0, 0);
   }
@@ -1842,8 +1843,19 @@
      SOCIAL BAR
      ========================================================= */
   async function renderSocial() {
-    const { settings } = await api('/social');
-    let s = JSON.parse(JSON.stringify(settings));
+    let settings = {};
+    try {
+      const res = await api('/social');
+      settings = (res && res.settings) || {};
+    } catch (e) {
+      console.warn('Could not load social settings from server:', e);
+    }
+    const s = {
+      enabled: !!settings.enabled,
+      position: settings.position === 'right' ? 'right' : 'left',
+      mobile: settings.mobile !== false,
+      links: (settings && settings.links) || {},
+    };
     const NETS = [
       ['telegram', 'Telegram', 'https://t.me/yourchannel', '@yourchannel or full link'],
       ['instagram', 'Instagram', 'https://www.instagram.com/yourpage', '@yourpage or full link'],
