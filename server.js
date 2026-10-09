@@ -413,6 +413,12 @@ app.use('/admin', express.static(path.join(__dirname, 'admin'), {
 app.get('/admin/*', (req, res) => res.sendFile(path.join(__dirname, 'admin', 'index.html')));
 
 /* ---------- public site ---------- */
+// clean URLs: /index.html -> /, /foo/index.html -> /foo/ (avoids duplicate URLs in Google too)
+app.use((req, res, next) => {
+  if ((req.method !== 'GET' && req.method !== 'HEAD') || !/(^|\/)index\.html?$/i.test(req.path)) return next();
+  const q = req.originalUrl.indexOf('?');
+  res.redirect(301, req.path.replace(/index\.html?$/i, '').replace(/^\/+/, '/') + (q === -1 ? '' : req.originalUrl.slice(q)));
+});
 // redirects managed in SEO settings (and auto-created on slug changes)
 app.use((req, res, next) => {
   if (req.method !== 'GET' && req.method !== 'HEAD') return next();
