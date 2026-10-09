@@ -18,10 +18,12 @@ const auth = require('./cms/auth');
 const seo = require('./cms/seo');
 const menu = require('./cms/menu');
 const social = require('./cms/social');
+const cleanhash = require('./cms/cleanhash');
 
 auth.load(); // creates the first admin account if none exists
 try { seo.applyGlobalToStatic(); } catch (e) { console.warn('SEO head injection skipped:', e.message); }
 try { social.applyAll(); } catch (e) { console.warn('Social bar injection skipped:', e.message); }
+try { cleanhash.applyAll(); } catch (e) { console.warn('Clean-hash injection skipped:', e.message); }
 
 const app = express();
 app.disable('x-powered-by');

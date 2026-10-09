@@ -14,6 +14,7 @@ const cfg = require('./config');
 const store = require('./store');
 const seo = require('./seo');
 const social = require('./social');
+const cleanhash = require('./cleanhash');
 
 /* ---------- helpers ---------- */
 
@@ -97,7 +98,7 @@ function fill(tpl, map) {
 function writePage(rel, html) {
   const file = path.join(cfg.SITE_DIR, ...rel.split('/').filter(Boolean), 'index.html');
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, social.inject(html));
+  fs.writeFileSync(file, cleanhash.inject(social.inject(html)));
 }
 
 /* ---------- shell compilation ---------- */

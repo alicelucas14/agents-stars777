@@ -94,7 +94,7 @@ function block(s = get(), { force = false } = {}) {
   return `<!--cms:social--><style>${CSS}</style><nav class="${cls}" aria-label="Social media">${links}</nav><!--/cms:social-->`;
 }
 
-const RE = /\n?<!--cms:social-->[\s\S]*?<!--\/cms:social-->/g;
+const RE = /\n?<!--cms:social-->[\s\S]*?<!--\/cms:social-->\n?/g;
 
 /** Remove any old bar from a page and insert the current one before </body>. */
 function inject(html, b = block()) {
@@ -131,4 +131,4 @@ function applyAll() {
   return changed;
 }
 
-module.exports = { NETWORKS, ORDER, DEFAULTS, get, save, clean, normalize, block, inject, applyAll };
+module.exports = { NETWORKS, ORDER, DEFAULTS, get, save, clean, normalize, block, inject, applyAll, htmlFiles };

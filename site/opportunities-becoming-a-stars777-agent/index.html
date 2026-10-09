@@ -803,5 +803,24 @@ var e="script#wp-emoji-settings",t=document.querySelector(e);if(!(t instanceof H
 
 
 <!--cms:social--><style>.s7-social{position:fixed;top:50%;transform:translateY(-50%);z-index:9990;display:flex;flex-direction:column;gap:6px;margin:0;padding:0}.s7-social.s7-l{left:0;align-items:flex-start}.s7-social.s7-r{right:0;align-items:flex-end}.s7-social a{display:flex;align-items:center;gap:12px;box-sizing:border-box;height:46px;width:46px;padding:0 13px;overflow:hidden;color:#fff!important;text-decoration:none!important;font:600 14px/1 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;white-space:nowrap;box-shadow:0 6px 18px -6px rgba(0,0,0,.5);transition:width .28s ease,filter .2s ease}.s7-social.s7-l a{border-radius:0 12px 12px 0}.s7-social.s7-r a{border-radius:12px 0 0 12px;flex-direction:row-reverse}.s7-social a:hover,.s7-social a:focus-visible{width:148px;filter:brightness(1.1);outline:none}.s7-social svg{width:20px;height:20px;flex:none}.s7-social span{opacity:0;transition:opacity .2s ease .05s}.s7-social a:hover span,.s7-social a:focus-visible span{opacity:1}@media (max-width:768px){.s7-social{top:auto;bottom:90px;transform:none;gap:4px}.s7-social a,.s7-social a:hover{width:40px;height:40px;padding:0 10px}.s7-social span{display:none}.s7-social svg{width:18px;height:18px}.s7-social.s7-nm{display:none}}@media print{.s7-social{display:none}}</style><nav class="s7-social s7-l" aria-label="Social media"><a href="https://t.me/stars777test" target="_blank" rel="noopener" aria-label="Telegram" title="Telegram" style="background:#229ED9"><svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M21.94 4.6 18.7 19.86c-.24 1.08-.88 1.34-1.78.84l-4.93-3.63-2.38 2.29c-.26.26-.48.48-.99.48l.35-5.02 9.14-8.26c.4-.35-.09-.55-.62-.2L6.2 13.47l-4.86-1.52c-1.06-.33-1.08-1.06.22-1.57L20.6 3.05c.88-.32 1.65.21 1.34 1.55z"/></svg><span>Telegram</span></a><a href="https://instagram.com/stars777test" target="_blank" rel="noopener" aria-label="Instagram" title="Instagram" style="background:linear-gradient(45deg,#f09433 0%,#e6683c 25%,#dc2743 50%,#cc2366 75%,#bc1888 100%)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1.1" fill="currentColor" stroke="none"/></svg><span>Instagram</span></a><a href="https://x.com/stars777test" target="_blank" rel="noopener" aria-label="X" title="X" style="background:#000000"><svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M18.9 1.15h3.68l-8.04 9.19L24 22.85h-7.4l-5.8-7.58-6.64 7.58H.47l8.6-9.83L0 1.15h7.59l5.24 6.93 6.07-6.93zm-1.29 19.5h2.04L6.49 3.24H4.3l13.31 17.41z"/></svg><span>X</span></a><a href="https://www.facebook.com/stars777test" target="_blank" rel="noopener" aria-label="Facebook" title="Facebook" style="background:#1877F2"><svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M14 8.5V6.8c0-.8.2-1.3 1.4-1.3H17V2.2c-.3-.1-1.4-.2-2.6-.2-2.5 0-4.2 1.5-4.2 4.3v2.2H7.5v3.7h2.7V22H14v-9.8h2.8l.4-3.7H14z"/></svg><span>Facebook</span></a></nav><!--/cms:social-->
+
+<!--cms:cleanhash--><script>(function(){
+var L=location,H=history,R=H.replaceState,P=H.pushState;
+function find(id){if(!id||/elementor-action/i.test(id))return null;try{id=decodeURIComponent(id);}catch(e){}return document.getElementById(id);}
+function bare(){return L.pathname+L.search;}
+function same(u){return u.origin===L.origin&&u.pathname===L.pathname&&u.search===L.search;}
+H.pushState=function(s,t,u){try{var x=new URL(u,L.href);if(x.hash&&same(x)&&find(x.hash.slice(1)))return R.call(H,s,t,bare());}catch(e){}return P.apply(H,arguments);};
+window.addEventListener("hashchange",function(){if(find(L.hash.slice(1)))R.call(H,H.state,"",bare());});
+document.addEventListener("click",function(e){
+if(e.defaultPrevented||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;
+var a=e.target.closest&&e.target.closest("a[href*='#']");if(!a||a.target==="_blank")return;
+var u;try{u=new URL(a.href);}catch(x){return;}
+if(!same(u))return;var el=find(u.hash.slice(1));if(!el)return;
+e.preventDefault();el.scrollIntoView({behavior:"smooth",block:"start"});
+});
+var t=find(L.hash.slice(1));
+if(t){var go=function(){var k=window.kadence;if(k&&k.scrollToElement)k.scrollToElement(t,false);else t.scrollIntoView({block:"start"});R.call(H,H.state,"",bare());};
+if(document.readyState==="complete")setTimeout(go,0);else window.addEventListener("load",function(){setTimeout(go,0);});}
+})();</script><!--/cms:cleanhash-->
 </body>
 </html>
