@@ -404,7 +404,10 @@ app.use('/api', (err, req, res, next) => { console.error(err); res.status(500).j
 
 /* ---------- admin UI ---------- */
 app.use('/admin/tinymce', express.static(path.join(__dirname, 'node_modules', 'tinymce'), { maxAge: '7d' }));
-app.use('/admin', express.static(path.join(__dirname, 'admin'), { index: 'index.html' }));
+app.use('/admin', express.static(path.join(__dirname, 'admin'), {
+  index: 'index.html',
+  setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache, must-revalidate'),
+}));
 app.get('/admin/*', (req, res) => res.sendFile(path.join(__dirname, 'admin', 'index.html')));
 
 /* ---------- public site ---------- */
