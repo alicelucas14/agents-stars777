@@ -184,6 +184,17 @@ function savePage(pagePath, data) {
   return o;
 }
 
+/** Write every saved static-page SEO override (content/seo.json → pages) back into its HTML. */
+function reapplyPages() {
+  const s = get();
+  let n = 0;
+  for (const p of staticPages()) {
+    const o = s.pages[p.path];
+    if (o) { applyPage(p.file, p.path, o); n++; }
+  }
+  return n;
+}
+
 function applyPage(file, pagePath, o) {
   const $ = cheerio.load(fs.readFileSync(file, 'utf8'));
   const val = (f) => o[f] || (o.orig && o.orig[f]) || '';
@@ -248,5 +259,5 @@ rebuildRedirectMap();
 
 module.exports = {
   DEFAULTS, get, save, titleFrom, normPath, findRedirect, addRedirect, removeRedirect, rebuildRedirectMap,
-  globalHead, wrapGlobal, staticPages, listPages, savePage, applyGlobalToStatic, readHeadInfo,
+  globalHead, wrapGlobal, staticPages, listPages, savePage, reapplyPages, applyGlobalToStatic, readHeadInfo,
 };
