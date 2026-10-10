@@ -1844,6 +1844,13 @@
      ========================================================= */
   async function renderSocial() {
     const res = await api('/social');
+    if (!Array.isArray(res.networks) || !res.networks.length) {
+      // admin files were updated but the Node process still runs the old server.js
+      view.innerHTML = `
+        <div class="page-head"><h1>Social bar</h1></div>
+        <div class="notice" id="social-restart-notice"><b>The server needs a restart.</b> The admin panel was updated, but the running server is still the old version, so the list of social networks can't load. Restart the Node app (pm2 restart or the aaPanel Node project <b>Restart</b> button), then reload this page.</div>`;
+      return;
+    }
     const NETS = Object.fromEntries((res.networks || []).map((n) => [n.key, n]));
     const NET_LIST = res.networks || [];
     const MAX = res.max || 16;
