@@ -7,6 +7,7 @@ const path = require('path');
 const cheerio = require('cheerio');
 const cfg = require('./config');
 const store = require('./store');
+const { ensureH1 } = require('./headings');
 
 const SEO_FILE = path.join(cfg.CONTENT_DIR, 'seo.json');
 
@@ -211,6 +212,16 @@ function applyPage(file, pagePath, o) {
   fs.writeFileSync(file, $.html());
 }
 
+/**
+ * <link> tags left over from WordPress that point at endpoints which no longer
+ * exist (REST API, oEmbed, XML-RPC, comment feeds, shortlinks). The site's own
+ * RSS link is re-added inside the cms:global block.
+ */
+const deadWpLink = (tag) =>
+  /\brel=["'](?:https:\/\/api\.w\.org\/|EditURI|shortlink|pingback)["']/i.test(tag)
+  || (/\brel=["']alternate["']/i.test(tag) && /\btype=["'](?:application\/json\+oembed|text\/xml\+oembed|application\/json|application\/rss\+xml)["']/i.test(tag));
+const stripDeadWpLinks = (head) => head.replace(/[ \t]*<link\b[^>]*>[ \t]*\r?\n?/gi, (tag) => (deadWpLink(tag) ? '' : tag));
+
 /** Inject the global head block into every static page (and fix the domain if SITE_URL changed). */
 function applyGlobalToStatic() {
   const block = wrapGlobal();
@@ -223,9 +234,11 @@ function applyGlobalToStatic() {
     let out = html.replace(/\n?<!--cms:global-->[\s\S]*?<!--\/cms:global-->/, '');
     const i = out.search(/<\/head>/i);
     if (i === -1) continue;
-    let head = out.slice(0, i), rest = out.slice(i);
+    let head = stripDeadWpLinks(out.slice(0, i)), rest = out.slice(i);
     if (cfg.SITE_URL !== cfg.ORIGIN) head = head.split(cfg.ORIGIN).join(cfg.SITE_URL);
     out = `${head}${block}\n${rest}`;
+    const h = ensureH1(out); // one <h1> per page (SEO)
+    if (h) out = h.html;
     if (out !== html) { fs.writeFileSync(file, out); changed++; }
   }
   return changed;

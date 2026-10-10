@@ -21,6 +21,7 @@ const social = require('./cms/social');
 const cleanhash = require('./cms/cleanhash');
 
 auth.load(); // creates the first admin account if none exists
+try { if (!fs.existsSync(path.join(cfg.SITE_DIR, '404.html'))) render.write404(); } catch (e) { console.warn('404 page not generated:', e.message); }
 try { seo.applyGlobalToStatic(); } catch (e) { console.warn('SEO head injection skipped:', e.message); }
 try { social.applyAll(); } catch (e) { console.warn('Social bar injection skipped:', e.message); }
 try { cleanhash.applyAll(); } catch (e) { console.warn('Clean-hash injection skipped:', e.message); }
@@ -28,6 +29,17 @@ try { cleanhash.applyAll(); } catch (e) { console.warn('Clean-hash injection ski
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
+
+/* ---------- HTTP -> HTTPS ----------
+ * Only when a proxy (Cloudflare / Nginx) tells us the visitor used plain HTTP,
+ * so local development on http://localhost is never redirected.
+ * Set FORCE_HTTPS=0 to turn it off. */
+app.use((req, res, next) => {
+  if (process.env.FORCE_HTTPS === '0' || req.secure || !req.headers['x-forwarded-proto']) return next();
+  if (req.method !== 'GET' && req.method !== 'HEAD') return res.status(403).json({ error: 'HTTPS required' });
+  res.redirect(301, `https://${new URL(cfg.SITE_URL).host}${req.originalUrl}`);
+});
+
 app.use(compression({ threshold: 1024 }));
 
 /* ---------- security headers ---------- */
@@ -289,21 +301,30 @@ api.put('/seo', async (req, res, next) => {
 });
 
 /* ---------- social bar ---------- */
-api.get('/social', (req, res) => res.json({ settings: social.get(), networks: social.ORDER.map((k) => ({ key: k, label: social.NETWORKS[k].label })) }));
+api.get('/social', (req, res) => res.json({ settings: social.get(), networks: social.catalogue(), max: social.MAX_ITEMS, styles: social.STYLES }));
 
 api.post('/social/preview', (req, res) => res.json({ html: social.block(social.clean(req.body || {}), { force: true }) }));
 
+const twitterHandle = (url) => { const m = /(?:x|twitter)\.com\/@?([A-Za-z0-9_]{1,15})(?:[/?#]|$)/i.exec(url || ''); return m ? '@' + m[1] : ''; };
+
 api.put('/social', async (req, res, next) => {
   try {
+    const bad = social.invalid(req.body || {});
+    if (bad.length) return res.status(400).json({ error: `Please check the link for: ${bad.join(', ')}` });
+    const prev = social.get();
     const s = social.save(req.body || {});
-    // also list the profiles in the Organization schema (sameAs) – helps Google & AI engines connect the brand
+    // Keep the Organization schema (sameAs) in sync with the bar – helps Google & AI engines connect the brand.
+    // Links that were removed from the bar are removed from sameAs too; URLs added by hand on the SEO screen stay.
     const cur = seo.get();
-    const urls = Object.values(s.links).filter(Boolean);
-    const sameAs = [...new Set([...(cur.sameAs || []), ...urls])];
+    const oldUrls = new Set(social.profileUrls(prev));
+    const sameAs = [...new Set([...(cur.sameAs || []).filter((u) => !oldUrls.has(u)), ...social.profileUrls(s)])];
     const patch = { sameAs };
-    if (!cur.facebookUrl && s.links.facebook) patch.facebookUrl = s.links.facebook;
-    if (!cur.twitterSite && s.links.x) { const m = /(?:x|twitter)\.com\/@?([A-Za-z0-9_]{1,15})/i.exec(s.links.x); if (m) patch.twitterSite = '@' + m[1]; }
-    const seoChanged = sameAs.length !== (cur.sameAs || []).length || patch.facebookUrl || patch.twitterSite;
+    const oldFb = social.firstUrl(prev, 'facebook'), newFb = social.firstUrl(s, 'facebook');
+    if (!cur.facebookUrl || cur.facebookUrl === oldFb) patch.facebookUrl = newFb;
+    const oldTw = twitterHandle(social.firstUrl(prev, 'x')), newTw = twitterHandle(social.firstUrl(s, 'x'));
+    if (!cur.twitterSite || cur.twitterSite === oldTw) patch.twitterSite = newTw;
+    const seoChanged = JSON.stringify(sameAs) !== JSON.stringify(cur.sameAs || [])
+      || patch.facebookUrl !== (cur.facebookUrl || '') || patch.twitterSite !== (cur.twitterSite || '');
     if (seoChanged) { seo.save({ ...cur, ...patch }); seo.applyGlobalToStatic(); }
     const updated = social.applyAll();
     res.json({ settings: s, updated, build: seoChanged ? await rebuild() : null });
@@ -439,6 +460,8 @@ app.get('/favicon.ico', (req, res) => res.redirect(301, '/wp-content/uploads/202
 app.use(express.static(cfg.SITE_DIR, {
   extensions: ['html'],
   setHeaders: (res, filePath) => {
+    // an SVG opened directly could run script on our domain – render it as a plain image only
+    if (/\.svg$/i.test(filePath)) res.setHeader('Content-Security-Policy', "default-src 'none'; img-src data: 'self'; style-src 'unsafe-inline'; sandbox");
     if (/\.(html|xml|txt)$/i.test(filePath)) res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
     else if (/[\\/]wp-(content|includes)[\\/]/.test(filePath)) res.setHeader('Cache-Control', 'public, max-age=2592000');
     else res.setHeader('Cache-Control', 'public, max-age=86400');

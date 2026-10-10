@@ -517,11 +517,74 @@ tr.edit-row > td { background: #fbfbfd !important; padding: 0 !important; }
 .dash-checks li.ok strong { color: var(--ink-2); font-weight: 600; }
 @media (max-width: 1100px) { .dash-grid { grid-template-columns: 1fr; } }
 
+/* ---------- social bar editor ---------- */
+.social-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 1fr); gap: 20px; max-width: 1280px; align-items: start; }
+.social-col { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.social-preview-card { position: sticky; top: 20px; overflow: hidden; }
+.sl-count { font-weight: 500; font-size: 12.5px; }
+.net-ico { width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; flex: none; color: var(--c); }
+.net-ico.solid { background: var(--bg, var(--c)); color: #fff; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .06); }
+.net-ico svg { width: 20px; height: 20px; }
+.net-ico svg[fill="currentColor"] { fill: currentColor; stroke: none; }
+.net-ico svg[fill="none"] { fill: none; stroke: currentColor; }
+.net-ico img { width: 22px; height: 22px; object-fit: contain; }
+.sl-list { display: flex; flex-direction: column; gap: 10px; }
+.sl-row { display: flex; gap: 12px; align-items: flex-start; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: #fff; transition: border-color .15s, box-shadow .15s; animation: slIn .22s ease; }
+.sl-row:focus-within { border-color: #ffc49a; box-shadow: 0 0 0 3px rgba(255, 106, 0, .08); }
+@keyframes slIn { from { opacity: 0; transform: translateY(6px); } }
+.sl-ico-wrap { padding-top: 1px; }
+.sl-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.sl-top { display: flex; align-items: baseline; gap: 8px; font-size: 13.5px; }
+.sl-top small { color: var(--muted); font-size: 12px; }
+.sl-extra { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.sl-extra .sl-label { flex: 1 1 200px; height: 34px; font-size: 13px; }
+.sl-extra .img-field { flex: 1 1 230px; }
+.sl-extra .img-field input { height: 34px; font-size: 13px; }
+.sl-extra .img-field .btn { height: 34px; }
+.sl-color { width: 40px; height: 34px; padding: 3px; border: 1px solid var(--line); border-radius: 9px; background: #fff; cursor: pointer; }
+.sl-actions { display: flex; flex-direction: column; gap: 2px; }
+.sl-btn { width: 30px; height: 28px; display: grid; place-items: center; border: 0; padding: 0; background: none; border-radius: 7px; color: var(--muted); }
+.sl-btn:hover:not(:disabled) { background: #f0f1f5; color: var(--ink); }
+.sl-btn.danger:hover { background: #fdecec; color: var(--danger); }
+.sl-btn:disabled { opacity: .3; cursor: default; }
+.sl-btn svg { width: 16px; height: 16px; }
+.sl-empty { padding: 28px 16px; text-align: center; color: var(--muted); border: 1.5px dashed var(--line); border-radius: 12px; }
+.sl-add { margin-top: 12px; }
+.sl-add-btn { width: 100%; border-style: dashed; color: var(--ink-2); }
+.sl-add-btn svg { width: 16px; height: 16px; }
+.sl-picker { margin-top: 10px; display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 8px; padding: 12px; background: #f7f8fb; border: 1px solid var(--line); border-radius: 12px; animation: slIn .18s ease; }
+.sl-chip { display: flex; align-items: center; gap: 10px; padding: 7px 10px 7px 7px; border: 1px solid var(--line); border-radius: 10px; background: #fff; font-weight: 600; font-size: 13px; color: var(--ink); text-align: left; transition: border-color .15s, transform .12s, box-shadow .15s; }
+.sl-chip:hover, .sl-chip:focus-visible { border-color: var(--c); box-shadow: 0 6px 14px -8px rgba(16, 24, 40, .3); transform: translateY(-1px); outline: none; }
+.sl-chip .net-ico { width: 30px; height: 30px; border-radius: 8px; }
+.sl-chip .net-ico svg { width: 16px; height: 16px; }
+.style-opts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.style-opt { border: 1.5px solid var(--line); border-radius: 12px; padding: 10px; background: #fff; text-align: left; display: flex; flex-direction: column; gap: 4px; color: var(--ink); transition: border-color .15s, box-shadow .15s; }
+.style-opt:hover { border-color: #cfd3de; }
+.style-opt.active { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255, 106, 0, .15); }
+.style-opt strong { font-size: 13px; margin-top: 4px; }
+.style-opt small { color: var(--muted); font-size: 11.5px; line-height: 1.35; }
+.so-demo { height: 70px; border-radius: 8px; background: linear-gradient(135deg, #eef1f7, #e2e6ef); display: flex; align-items: center; }
+.so-bar { display: flex; flex-direction: column; gap: 4px; padding: 5px; border-radius: 0 9px 9px 0; }
+.so-bar i { display: block; width: 10px; height: 10px; border-radius: 50%; margin: 1px; }
+.so-light .so-bar { background: #fff; box-shadow: 0 3px 8px rgba(15, 23, 42, .15); }
+.so-light .so-bar i { background: var(--c); }
+.so-dark .so-bar { background: #0f172a; box-shadow: 0 3px 8px rgba(15, 23, 42, .3); }
+.so-dark .so-bar i { background: #cbd5e1; }
+.so-brand .so-bar { padding: 0; gap: 3px; }
+.so-brand .so-bar i { background: var(--c); width: 15px; height: 12px; margin: 0; border-radius: 0 4px 4px 0; }
+.preview-tabs { padding: 3px; }
+.preview-tabs button { padding: 4px 11px; font-size: 12.5px; }
+.sp-stage { position: relative; overflow: hidden; background: radial-gradient(#d6dae4 1px, transparent 1px) 0 0 / 16px 16px, #f3f4f8; border-bottom: 1px solid var(--line); transition: height .25s ease; }
+.sp-stage iframe { position: absolute; top: 16px; border: 0; background: #fff; transform-origin: 0 0; border-radius: 12px; box-shadow: 0 16px 40px -16px rgba(16, 24, 40, .45); }
+.sp-stage.mobile iframe { border-radius: 36px; box-shadow: 0 0 0 10px #111827, 0 24px 50px -20px rgba(16, 24, 40, .6); }
+
 /* ---------- responsive ---------- */
 @media (max-width: 1100px) {
   .seo-layout { grid-template-columns: 1fr; }
   .seo-nav { position: static; flex-direction: row; flex-wrap: wrap; }
   .social-grid { grid-template-columns: 1fr; }
+  .social-layout { grid-template-columns: 1fr; }
+  .social-preview-card { position: static; }
 }
 @media (max-width: 700px) {
   .form-grid, .redir-add { grid-template-columns: 1fr; }

@@ -38,6 +38,11 @@ in the console. Change it under **Settings** or with
 - **Menu**: add / rename / reorder / remove header-menu links (desktop + mobile);
   saving updates every page on the site. Sub-menus are not supported.
 - Original Elementor pages (home etc.) keep their design – only their SEO is editable
+- **Social bar**: floating social/contact links on every page. Add up to 16 links
+  (Telegram, WhatsApp, Instagram, Facebook, X, YouTube, TikTok, LinkedIn, Threads,
+  Discord, Pinterest, email, phone, website or a custom link with your own icon and
+  colour), reorder them, choose light/dark/brand style and left/right side, with a
+  live desktop/mobile preview. Profile links are synced to the schema `sameAs`.
 
 ### SEO (replaces Rank Math)
 **Per post** (SEO box under the editor):
@@ -72,6 +77,8 @@ archives (with pagination), "similar posts", previous/next links, `sitemap.xml`,
    node server.js          # keep alive with pm2:  pm2 start server.js --name stars777
    ```
 4. Put Nginx/Caddy in front for HTTPS (the session cookie is marked `Secure` over HTTPS).
+   When a proxy reports `X-Forwarded-Proto: http`, the server 301-redirects to the
+   `SITE_URL` host over HTTPS. Set `FORCE_HTTPS=0` to turn this off.
 5. **Back up `content/` and `site/wp-content/uploads/`** – that is all your data.
 
 ## Notes
@@ -81,3 +88,7 @@ archives (with pagination), "similar posts", previous/next links, `sitemap.xml`,
   static pages. Tawk.to chat and Google Analytics still work.
 - `tools/import-wp.js` re-imports posts from the live WordPress site; it
   **overwrites** posts with the same ID, so only run it before you start editing here.
+- Unknown URLs get a branded `site/404.html` (regenerated on every rebuild).
+- `tools/fix-static.js [--dry-run]` repairs broken Elementor thumbnail links in the
+  static pages and makes sure each page has exactly one `<h1>` (the server also
+  does the heading fix on start-up – see `cms/headings.js`).

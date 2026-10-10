@@ -15,6 +15,10 @@ const store = require('./store');
 const seo = require('./seo');
 const social = require('./social');
 const cleanhash = require('./cleanhash');
+const { ensureH1 } = require('./headings');
+
+/** Body has its own <h1> (custom hero etc.): keep it, turn the theme title into a styled <p>. */
+const oneH1 = (html, content) => (/<h1\b/i.test(content || '') ? (ensureH1(html) || { html }).html : html);
 
 /* ---------- helpers ---------- */
 
@@ -223,7 +227,7 @@ function headHtml(m) {
   return [
     meta('name', 'description', m.description),
     meta('name', 'robots', robotsContent(m.robots)),
-    `<link rel="canonical" href="${esc(abs(m.canonical || m.url))}" />\n`,
+    m.noCanonical ? '' : `<link rel="canonical" href="${esc(abs(m.canonical || m.url))}" />\n`,
     meta('property', 'og:locale', 'en_US'),
     meta('property', 'og:type', m.type || 'website'),
     meta('property', 'og:title', m.ogTitle || m.title),
@@ -398,7 +402,7 @@ function renderPost(post, ctx, { preview = false } = {}) {
       .join('')}</span></div>`
     : '';
 
-  return fill(S.postTpl, {
+  return oneH1(fill(S.postTpl, {
     TITLE: esc(meta.title),
     HEAD: headHtml(meta),
     EXTRA_CSS: (post.extraCss || []).map((h) => `<link rel="stylesheet" href="${esc(h)}" media="all" />`).join('\n'),
@@ -412,7 +416,7 @@ function renderPost(post, ctx, { preview = false } = {}) {
     TAGS: tagsHtml,
     NAV: navLinks ? fill(S.navTpl, { NAV_LINKS: navLinks }) : '',
     RELATED: rel.length ? fill(S.relatedTpl, { RELATED_ITEMS: rel.map((p) => loopItem(S.relItemTpl, p, terms)).join('\n') }) : '',
-  });
+  }), post.content);
 }
 
 /* ---------- pages ---------- */
@@ -452,7 +456,7 @@ function renderPage(page, { preview = false } = {}) {
   const meta = pageSeo(page, preview);
   const drop = /^(post-template-default|single|single-post|single-format-standard|elementor-page|postid-\d+|elementor-page-\d+)$/;
   const bodyClass = S.postBodyClass.split(/\s+/).filter((c) => c && !drop.test(c)).join(' ') + ` page-template-default page page-id-${page.id}`;
-  return fill(S.pageTpl, {
+  return oneH1(fill(S.pageTpl, {
     TITLE: esc(meta.title),
     HEAD: headHtml(meta),
     BODY_CLASS: bodyClass,
@@ -460,10 +464,42 @@ function renderPage(page, { preview = false } = {}) {
     ARTICLE_CLASS: `entry content-bg single-entry post-${page.id} page type-page status-publish hentry`,
     PAGE_HEADER: page.showTitle === false ? '' : fill(S.pageHeaderTpl, { H1: esc(page.title) }),
     CONTENT: page.content || '',
-  });
+  }), page.content);
 }
 
 function previewPage(page) { return renderPage(page, { preview: true }); }
+
+/* ---------- 404 page ---------- */
+
+/** site/404.html built from the site's own page shell, so it has the real header, menu and footer. */
+function write404(posts = store.publishedPosts()) {
+  const S = shells();
+  const exists = (p) => fs.existsSync(path.join(cfg.SITE_DIR, ...p.split('/').filter(Boolean), 'index.html'));
+  const links = [['/', 'Home'], ['/stars777-games/', 'Games'], ['/category/blog/', 'Blog'], ['/register/', 'Become an agent']]
+    .filter(([u]) => u === '/' || exists(u));
+  const btn = 'display:inline-block;padding:11px 20px;border-radius:999px;font-weight:600;text-decoration:none;margin:4px';
+  const latest = posts.slice(0, 6).map((p) => `<li style="margin:0;padding:12px 0;border-bottom:1px solid rgba(0,0,0,.08)"><a href="${postUrl(p)}" style="text-decoration:none;font-weight:600">${esc(p.title)}</a></li>`).join('');
+  const content = `
+<div class="cms-404" style="text-align:center;padding:24px 0 8px">
+  <p style="font-size:84px;line-height:1;font-weight:800;margin:0;letter-spacing:-.04em;background:linear-gradient(135deg,#ff6a00,#ffb000);-webkit-background-clip:text;background-clip:text;color:transparent">404</p>
+  <p style="font-size:18px;margin:14px auto 22px;max-width:520px">Sorry, the page you were looking for doesn't exist or has moved. Try one of these instead:</p>
+  <p style="margin:0 0 8px">${links.map(([u, t], i) => `<a href="${u}" style="${btn};${i === 0 ? 'background:#ff6a00;color:#fff' : 'border:1px solid rgba(0,0,0,.15);color:inherit'}">${t}</a>`).join('')}</p>
+</div>
+${latest ? `<div style="max-width:640px;margin:28px auto 0"><h2 style="font-size:20px;margin:0 0 6px">Latest articles</h2><ul style="list-style:none;margin:0;padding:0">${latest}</ul></div>` : ''}`;
+  const s = seo.get();
+  const title = seo.titleFrom(s.pageTitle || s.postTitle, { title: 'Page not found' });
+  const drop = /^(post-template-default|single|single-post|single-format-standard|elementor-page|postid-\d+|elementor-page-\d+)$/;
+  const html = fill(S.pageTpl, {
+    TITLE: esc(title),
+    HEAD: headHtml({ title, url: '/404/', description: 'Page not found.', robots: { noindex: true }, noCanonical: true }),
+    BODY_CLASS: S.postBodyClass.split(/\s+/).filter((c) => c && !drop.test(c)).join(' ') + ' error404',
+    ARTICLE_ID: 'post-404',
+    ARTICLE_CLASS: 'entry content-bg single-entry page type-page hentry',
+    PAGE_HEADER: fill(S.pageHeaderTpl, { H1: 'Page not found' }),
+    CONTENT: content,
+  });
+  fs.writeFileSync(path.join(cfg.SITE_DIR, '404.html'), cleanhash.inject(social.inject(html)));
+}
 
 /* ---------- archives ---------- */
 
@@ -560,7 +596,11 @@ function writeSitemap(posts, archives, pages = []) {
       const o = s.pages[p.path] || {};
       if (o.noindex) continue;
       if (o.canonical && abs(o.canonical) !== cfg.SITE_URL + p.path) continue;
-      if (/noindex/i.test(seo.readHeadInfo(p.file).robots)) continue;
+      if (seo.findRedirect(p.path)) continue; // visitors never see this file
+      const head = seo.readHeadInfo(p.file);
+      if (/noindex/i.test(head.robots)) continue;
+      // an old copy whose canonical points at another URL is a duplicate – keep it out of the sitemap
+      if (!o.canonical && head.canonical && abs(head.canonical).replace(/\/?$/, '/') !== (cfg.SITE_URL + p.path).replace(/\/?$/, '/')) continue;
       urls.set(p.path, { mod: fs.statSync(p.file).mtime });
     }
   }
@@ -709,6 +749,7 @@ function buildAll() {
   const sitemapUrls = writeSitemap(posts, archiveList, pages);
   writeFeed(posts, terms);
   writeLlmsTxt(posts, pages);
+  try { write404(posts); } catch (e) { console.warn('404 page not generated:', e.message); }
   return { posts: posts.length, pages: pages.length, archivePages, sitemapUrls, ms: Date.now() - t0 };
 }
 
@@ -718,4 +759,4 @@ function previewPost(post) {
   return renderPost(post, { posts: list, terms: store.getTerms() }, { preview: true });
 }
 
-module.exports = { buildAll, previewPost, previewPage, renderPost, renderPage, excerptOf, stripHtml, postUrl, defaultRobotsTxt, PAGE_SCHEMAS, reloadTemplates: () => { compiled = null; } };
+module.exports = { buildAll, previewPost, previewPage, renderPost, renderPage, write404, excerptOf, stripHtml, postUrl, defaultRobotsTxt, PAGE_SCHEMAS, reloadTemplates: () => { compiled = null; } };

@@ -1843,102 +1843,256 @@
      SOCIAL BAR
      ========================================================= */
   async function renderSocial() {
-    let settings = {};
-    try {
-      const res = await api('/social');
-      settings = (res && res.settings) || {};
-    } catch (e) {
-      console.warn('Could not load social settings from server:', e);
-    }
-    let s = {
-      enabled: !!settings.enabled,
-      position: settings.position === 'right' ? 'right' : 'left',
-      mobile: settings.mobile !== false,
-      links: (settings && settings.links) || {},
+    const res = await api('/social');
+    const NETS = Object.fromEntries((res.networks || []).map((n) => [n.key, n]));
+    const NET_LIST = res.networks || [];
+    const MAX = res.max || 16;
+    const st = res.settings || {};
+    const s = {
+      enabled: !!st.enabled,
+      position: st.position === 'right' ? 'right' : 'left',
+      mobile: st.mobile !== false,
+      style: ['light', 'dark', 'brand'].includes(st.style) ? st.style : 'light',
     };
-    const NETS = [
-      ['telegram', 'Telegram', 'https://t.me/yourchannel', '@yourchannel or full link'],
-      ['instagram', 'Instagram', 'https://www.instagram.com/yourpage', '@yourpage or full link'],
-      ['x', 'X (Twitter)', 'https://x.com/yourhandle', '@yourhandle or full link'],
-      ['facebook', 'Facebook', 'https://www.facebook.com/yourpage', 'page name or full link'],
-    ];
+    let uid = 0;
+    const withId = (list) => (list || []).map((it) => ({ ...it, _id: ++uid }));
+    let items = withId(st.items);
+    let device = 'desktop';
+
     const tg = (id, on, label, hint) => `<label class="toggle" for="${id}"><input type="checkbox" id="${id}" ${on ? 'checked' : ''}><span class="tg" aria-hidden="true"></span><span class="tg-text"><strong>${label}</strong>${hint ? `<small>${hint}</small>` : ''}</span></label>`;
+    const ICO = {
+      up: '<svg viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></svg>',
+      down: '<svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>',
+      trash: '<svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></svg>',
+      plus: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+    };
+    const STYLES = [
+      ['light', 'Light', 'White panel, icons in brand colours'],
+      ['dark', 'Dark', 'Dark glass panel, light icons'],
+      ['brand', 'Brand colours', 'Solid coloured buttons'],
+    ];
+    const DEMO = ['#229ED9', '#E4405F', '#1877F2', '#25D366'];
+
+    const look = (it) => {
+      const n = NETS[it.network] || NETS.custom;
+      const color = it.network === 'custom' && /^#[0-9a-f]{6}$/i.test(it.color || '') ? it.color : n.color;
+      return {
+        n, color,
+        bg: it.network === 'custom' ? color : n.bg,
+        icon: it.network === 'custom' && it.icon ? `<img src="${esc(it.icon)}" alt="">` : n.icon,
+      };
+    };
+    const icoHtml = (it) => { const v = look(it); return `<span class="net-ico solid" style="--c:${esc(v.color)};--bg:${esc(v.bg)}">${v.icon}</span>`; };
+
+    const rowHtml = (it, i) => {
+      const { n, color } = look(it);
+      const custom = it.network === 'custom';
+      const id = it._id;
+      return `<div class="sl-row" data-id="${id}">
+        <span class="sl-ico-wrap">${icoHtml(it)}</span>
+        <div class="sl-main">
+          <div class="sl-top"><strong>${esc(n.label)}</strong>${custom ? '<small>any website or app</small>' : ''}</div>
+          <input class="input sl-url" id="sl-url-${id}" data-k="url" value="${esc(it.url || '')}" placeholder="${esc(n.placeholder)}" aria-label="${esc(n.label)} link" autocomplete="off" spellcheck="false">
+          <div class="sl-extra">
+            <input class="input sl-label" id="sl-label-${id}" data-k="label" value="${esc(it.label || '')}" maxlength="40" aria-label="Label shown on hover"
+              placeholder="${custom ? 'Label, e.g. Download our app' : `Hover label (default: ${esc(n.label)})`}">
+            ${custom ? `<input type="color" class="sl-color" id="sl-color-${id}" data-k="color" value="${esc(color)}" title="Button colour" aria-label="Button colour">
+              <div class="img-field sl-icon-field"><input class="input" id="sl-icon-${id}" data-k="icon" value="${esc(it.icon || '')}" placeholder="Icon image (optional)" aria-label="Icon image"><button type="button" class="btn btn-sm" data-pick="sl-icon-${id}">Choose</button></div>` : ''}
+          </div>
+        </div>
+        <div class="sl-actions">
+          <button type="button" class="sl-btn" data-act="up" id="sl-up-${id}" title="Move up" aria-label="Move up" ${i === 0 ? 'disabled' : ''}>${ICO.up}</button>
+          <button type="button" class="sl-btn" data-act="down" id="sl-down-${id}" title="Move down" aria-label="Move down" ${i === items.length - 1 ? 'disabled' : ''}>${ICO.down}</button>
+          <button type="button" class="sl-btn danger" data-act="remove" id="sl-remove-${id}" title="Remove" aria-label="Remove">${ICO.trash}</button>
+        </div>
+      </div>`;
+    };
 
     view.innerHTML = `
       <div class="page-head"><h1>Social bar<span id="dirty-dot" class="dirty-dot" title="Unsaved changes" hidden></span></h1>
         <span class="spacer"></span>
         <button class="btn btn-primary" id="social-save">Save changes</button>
       </div>
-      <p class="hint" style="margin:-8px 0 16px">A floating bar with your social links, shown on every page of the site. Only networks with a link are shown.</p>
-      <div class="settings-grid" style="max-width:1150px;grid-template-columns:minmax(0,1fr) minmax(320px,1fr)">
-        <div style="display:flex;flex-direction:column;gap:18px">
-          <div class="card"><div class="card-head">Display</div><div class="card-body">
+      <p class="hint" style="margin:-8px 0 16px">A floating bar with your social profiles and contact links, shown on every page. Add as many as you need, put them in order with the arrows, and check desktop and mobile in the preview before saving.</p>
+      <div class="social-layout">
+        <div class="social-col">
+          <div class="card"><div class="card-head">Links <span class="muted sl-count" id="sl-count"></span></div>
+            <div class="card-body">
+              <div id="sl-list" class="sl-list"></div>
+              <div class="sl-add">
+                <button type="button" class="btn sl-add-btn" id="sl-add-toggle" aria-expanded="false" aria-controls="sl-picker">${ICO.plus}Add a link</button>
+                <div class="sl-picker" id="sl-picker" hidden>
+                  ${NET_LIST.map((n) => `<button type="button" class="sl-chip" data-add="${n.key}" id="sl-add-${n.key}" style="--c:${esc(n.color)};--bg:${esc(n.bg)}"><span class="net-ico solid">${n.icon}</span>${esc(n.label)}</button>`).join('')}
+                </div>
+              </div>
+              <p class="hint" style="margin:12px 0 0">You can type a full link or just a handle (e.g. <code>@stars777</code>). Profile links are also added to your site's schema (Organization → sameAs) so Google and AI search connect them to your brand; removing a link here removes it there too.</p>
+            </div>
+          </div>
+          <div class="card"><div class="card-head">Appearance</div><div class="card-body">
             ${tg('social-enabled', s.enabled, 'Show social bar on the website')}
-            <div class="field" style="margin-top:14px"><span>Position</span>
-              <div class="tabs" id="social-pos">
+            <div class="field" style="margin:14px 0"><span>Style</span>
+              <div class="style-opts" id="social-style" role="radiogroup" aria-label="Style">
+                ${STYLES.map(([k, t, d]) => `<button type="button" role="radio" aria-checked="${s.style === k}" class="style-opt so-${k} ${s.style === k ? 'active' : ''}" data-style="${k}" id="social-style-${k}">
+                  <span class="so-demo"><span class="so-bar">${DEMO.map((c) => `<i style="--c:${c}"></i>`).join('')}</span></span>
+                  <strong>${t}</strong><small>${d}</small></button>`).join('')}
+              </div>
+            </div>
+            <div class="field"><span>Position</span>
+              <div class="tabs" id="social-pos" style="align-self:flex-start">
                 <button type="button" data-pos="left" id="social-pos-left" class="${s.position !== 'right' ? 'active' : ''}">Left side</button>
                 <button type="button" data-pos="right" id="social-pos-right" class="${s.position === 'right' ? 'active' : ''}">Right side</button>
-              </div></div>
-            ${tg('social-mobile', s.mobile, 'Show on mobile', 'small icons near the bottom of the screen')}
-          </div></div>
-          <div class="card"><div class="card-head">Links</div><div class="card-body">
-            ${NETS.map(([k, label, ph, hint]) => `<label class="field"><span>${label} <small>${hint}</small></span><input id="social-${k}" data-net="${k}" value="${esc(s.links[k] || '')}" placeholder="${ph}"></label>`).join('')}
-            <p class="hint" style="margin:0">Saving also adds these profiles to your site's schema (Organization → sameAs), which helps Google and AI search link them to your brand.</p>
+              </div>
+            </div>
+            ${tg('social-mobile', s.mobile, 'Show on mobile', 'A round button in the bottom corner that opens the links, so it never covers page text')}
           </div></div>
         </div>
-        <div class="card" style="position:sticky;top:20px"><div class="card-head">Live preview <span class="muted" style="font-weight:500;font-size:12.5px">hover the icons</span></div>
-          <div class="card-body" style="padding:0">
-            <iframe id="social-preview" title="Social bar preview" style="width:100%;height:380px;border:0;display:block;border-radius:0 0 12px 12px"></iframe>
+        <div class="card social-preview-card">
+          <div class="card-head">Live preview
+            <div class="tabs preview-tabs" id="sp-device">
+              <button type="button" data-dev="desktop" id="sp-dev-desktop" class="active">Desktop</button>
+              <button type="button" data-dev="mobile" id="sp-dev-mobile">Mobile</button>
+            </div>
           </div>
+          <div class="sp-stage" id="sp-stage"><iframe id="social-preview" title="Social bar preview" tabindex="-1"></iframe></div>
+          <p class="hint" id="sp-hint" style="margin:0;padding:10px 16px 14px">Hover the icons to see their labels.</p>
         </div>
       </div>`;
+    wirePickers(view);
 
-    const collect = () => ({
+    const drawList = () => {
+      $('#sl-list').innerHTML = items.length
+        ? items.map(rowHtml).join('')
+        : '<div class="sl-empty">No links yet. Click <b>Add a link</b> to add your first profile.</div>';
+      $('#sl-count').textContent = `${items.length} / ${MAX}`;
+      $('#sl-add-toggle').disabled = items.length >= MAX;
+    };
+    const itemOf = (el) => { const row = el.closest('.sl-row'); return row && items.find((x) => x._id === +row.dataset.id); };
+
+    /* --- preview --- */
+    const DEV = { desktop: [1280, 760], mobile: [390, 780] };
+    const mock = (bar) => `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+      body{margin:0;font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;background:#f4f6fb;color:#334155;min-height:100vh}
+      .hd{height:64px;background:linear-gradient(90deg,#ff6a00,#ff8a00);display:flex;align-items:center;padding:0 32px;gap:22px;color:#fff;font-weight:800;letter-spacing:.04em}
+      .hd nav{margin-left:auto;display:flex;gap:20px}.hd nav i{width:58px;height:8px;border-radius:4px;background:rgba(255,255,255,.6)}
+      .hero{height:250px;background:linear-gradient(135deg,#1e1b4b,#7c2d12 60%,#ff6a00);display:grid;place-items:center;color:#fff;font:800 38px/1.1 system-ui;text-align:center;padding:0 24px}
+      .ct{max-width:760px;margin:34px auto;padding:0 28px}h2{color:#0f172a;margin:0 0 12px;font-size:24px}.ln{height:11px;border-radius:6px;background:#dde2ec;margin:15px 0}
+      .empty{position:fixed;left:0;right:0;bottom:24px;text-align:center;color:#64748b;font-weight:600}
+      @media (max-width:768px){.hd nav{display:none}.hd{height:56px;padding:0 18px}.hero{height:200px;font-size:27px}.ct{padding:0 18px}}
+      </style></head><body><div class="hd">STARS777<nav><i></i><i></i><i></i><i></i></nav></div><div class="hero">Agency Plan Commission</div>
+      <div class="ct"><h2>About our referral agents</h2>${[100, 92, 97, 64, 100, 88, 95, 70, 100, 84].map((w) => `<div class="ln" style="width:${w}%"></div>`).join('')}</div>
+      ${bar || '<div class="empty">Add a link to see the bar</div>'}</body></html>`;
+    const fit = () => {
+      const stage = $('#sp-stage'), f = $('#social-preview');
+      if (!stage || !f) return;
+      const [w, h] = DEV[device];
+      const k = Math.min(1, (stage.clientWidth - 32) / w, device === 'mobile' ? 600 / h : 1);
+      Object.assign(f.style, { width: `${w}px`, height: `${h}px`, transform: `scale(${k})`, left: `${Math.round((stage.clientWidth - w * k) / 2)}px` });
+      stage.style.height = `${Math.round(h * k + 32)}px`;
+      stage.classList.toggle('mobile', device === 'mobile');
+      $('#sp-hint').textContent = device === 'mobile' ? 'Tap the round button to open the links.' : 'Hover the icons to see their labels.';
+    };
+    const onResize = () => { if (!$('#sp-stage')) return window.removeEventListener('resize', onResize); fit(); };
+    window.addEventListener('resize', onResize);
+
+    const payload = () => ({
+      ...s,
       enabled: $('#social-enabled').checked,
       mobile: $('#social-mobile').checked,
-      position: s.position,
-      links: Object.fromEntries(NETS.map(([k]) => [k, $(`#social-${k}`).value.trim()])),
+      items: items.map(({ _id, ...it }) => it),
     });
-    const mock = (bar) => `<!doctype html><html><head><meta charset="utf-8"><style>
-      body{margin:0;font:14px/1.5 system-ui,sans-serif;background:#0f1220;color:#cfd3e0;min-height:100vh}
-      .hd{height:54px;background:#161a2b;display:flex;align-items:center;padding:0 22px;gap:18px;font-weight:700;color:#fff}
-      .hd i{width:46px;height:10px;border-radius:5px;background:#2a3050}.hd b{color:#ff9a1f}
-      .ct{max-width:440px;margin:28px auto;padding:0 70px}.ln{height:10px;border-radius:5px;background:#232842;margin:12px 0}
-      .hero{height:110px;border-radius:12px;background:linear-gradient(135deg,#ff6a00,#ff9a1f);opacity:.85;margin-bottom:18px}
-      .empty{position:absolute;inset:0;display:grid;place-items:center;color:#8a92a3}</style></head>
-      <body><div class="hd"><b>STARS777</b><i></i><i></i><i></i></div><div class="ct"><div class="hero"></div>
-      <div class="ln"></div><div class="ln" style="width:80%"></div><div class="ln" style="width:90%"></div><div class="ln" style="width:60%"></div></div>
-      ${bar || '<div class="empty">Add at least one link to see the bar</div>'}</body></html>`;
     let t;
     const refresh = () => {
       clearTimeout(t);
       t = setTimeout(async () => {
-        try { const { html } = await api('/social/preview', { method: 'POST', body: collect() }); $('#social-preview').srcdoc = mock(html); } catch {}
+        try { const { html } = await api('/social/preview', { method: 'POST', body: payload() }); $('#social-preview').srcdoc = mock(html); } catch { /* preview only */ }
       }, 250);
     };
+    const changed = () => { setDirty(true); refresh(); };
 
-    view.addEventListener('input', () => { setDirty(true); refresh(); });
-    view.addEventListener('change', () => { setDirty(true); refresh(); });
+    /* --- events --- */
+    view.addEventListener('input', (e) => {
+      const k = e.target.dataset.k;
+      if (!k) return changed();
+      const it = itemOf(e.target);
+      if (!it) return;
+      it[k] = e.target.value;
+      if (k === 'color' || k === 'icon') e.target.closest('.sl-row').querySelector('.sl-ico-wrap').innerHTML = icoHtml(it);
+      changed();
+    });
+    view.addEventListener('change', (e) => { if (!e.target.dataset.k) changed(); });
+
+    $('#sl-list').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-act]');
+      if (!b) return;
+      const it = itemOf(b);
+      const i = items.indexOf(it);
+      if (b.dataset.act === 'remove') items.splice(i, 1);
+      else {
+        const j = b.dataset.act === 'up' ? i - 1 : i + 1;
+        if (j < 0 || j >= items.length) return;
+        [items[i], items[j]] = [items[j], items[i]];
+      }
+      drawList();
+      if (b.dataset.act !== 'remove') { const again = $(`#sl-${b.dataset.act}-${it._id}`); if (again && !again.disabled) again.focus(); }
+      changed();
+    });
+
+    const picker = $('#sl-picker'), addBtn = $('#sl-add-toggle');
+    const showPicker = (on) => { picker.hidden = !on; addBtn.setAttribute('aria-expanded', String(on)); };
+    addBtn.addEventListener('click', () => showPicker(picker.hidden));
+    picker.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-add]');
+      if (!b || items.length >= MAX) return;
+      const it = { network: b.dataset.add, url: '', _id: ++uid };
+      if (it.network === 'custom') it.color = NETS.custom.color;
+      items.push(it);
+      drawList();
+      showPicker(false);
+      const input = $(`#sl-url-${it._id}`);
+      input.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      input.focus();
+      setDirty(true);
+    });
+
+    $('#social-style').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-style]');
+      if (!b) return;
+      s.style = b.dataset.style;
+      $$('#social-style [data-style]').forEach((x) => { x.classList.toggle('active', x === b); x.setAttribute('aria-checked', String(x === b)); });
+      changed();
+    });
     $('#social-pos').addEventListener('click', (e) => {
       const b = e.target.closest('[data-pos]');
       if (!b) return;
       s.position = b.dataset.pos;
       $$('#social-pos button').forEach((x) => x.classList.toggle('active', x === b));
-      setDirty(true); refresh();
+      changed();
     });
+    $('#sp-device').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-dev]');
+      if (!b) return;
+      device = b.dataset.dev;
+      $$('#sp-device button').forEach((x) => x.classList.toggle('active', x === b));
+      fit();
+    });
+
     $('#social-save').onclick = async () => {
       const b = $('#social-save');
       busy(b, true, ' Saving…');
       try {
-        const r = await api('/social', { method: 'PUT', body: collect() });
-        s = r.settings;
-        NETS.forEach(([k]) => { $(`#social-${k}`).value = s.links[k] || ''; }); // show normalised links
+        const r = await api('/social', { method: 'PUT', body: payload() });
+        items = withId(r.settings.items); // show the cleaned-up links (full URLs, empty rows removed)
+        drawList();
         setDirty(false);
-        const n = Object.values(s.links).filter(Boolean).length;
-        toast(!s.enabled ? 'Saved. The social bar is <b>hidden</b> on the site.' : n ? `Saved. Social bar updated on ${r.updated} pages.${buildNote(r.build)}` : 'Saved, but no links are set so nothing is shown.');
+        refresh();
+        const n = items.length;
+        toast(!r.settings.enabled ? 'Saved. The social bar is <b>hidden</b> on the site.' : n ? `Saved. Social bar updated on ${r.updated} pages.${buildNote(r.build)}` : 'Saved, but no links are set so nothing is shown.');
       } catch (ex) { toast(esc(ex.message), 'err'); }
       busy(b, false);
     };
+
+    drawList();
+    fit();
     refresh();
   }
 
