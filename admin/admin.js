@@ -345,6 +345,7 @@
       else if (name === 'seo') await renderSeoSettings(arg);
       else if (name === 'settings') await renderSettings();
       else if (name === 'users') await renderUsers();
+      else if (name === 'signups') await renderSignups();
       else if (name === 'posts') await renderPosts();
       else await renderDashboard();
     } catch (e) {
@@ -358,10 +359,12 @@
      DASHBOARD
      ========================================================= */
   async function renderDashboard() {
-    const [posts, pages, seoData, statics, media, usersData] = await Promise.all([
+    const [posts, pages, seoData, statics, media, usersData, signupData] = await Promise.all([
       api('/posts'), api('/pages'), api('/seo'),
       api('/seo/pages').catch(() => []), api('/media').catch(() => []), api('/users').catch(() => ({ users: [] })),
+      api('/signups').catch(() => ({ items: [] })),
     ]);
+    const signupsWeek = signupData.items.filter((x) => Date.now() - new Date(x.date) < 7 * 864e5).length;
     const s = seoData.settings || {};
     const siteUrl = seoData.siteUrl || state.siteUrl || '';
     const published = posts.filter((p) => p.status === 'publish');
@@ -402,6 +405,7 @@
       media: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 17-5-5-8 8"/>',
       users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>',
       seo: '<path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/>',
+      signups: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/>',
     };
     const stat = (id, icon, label, value, sub, href, tone = '') => `
       <a class="dash-stat ${tone}" href="${href}" id="dash-stat-${id}">
@@ -425,6 +429,7 @@
       </div>
 
       <div class="dash-stats">
+        ${stat('signups', 'signups', 'Agent sign-ups', signupsWeek, `this week · ${signupData.items.length} total`, '#/signups', signupsWeek ? 'good' : '')}
         ${stat('published', 'post', 'Published posts', published.length, `${posts.length} total`, '#/posts')}
         ${stat('drafts', 'draft', 'Drafts', drafts.length, drafts.length ? 'waiting to publish' : 'all caught up', '#/posts', drafts.length ? 'warn' : '')}
         ${stat('pages', 'page', 'Pages', pages.length + statics.length, `${statics.length} original · ${pages.length} custom`, '#/pages')}
@@ -2101,6 +2106,74 @@
     drawList();
     fit();
     refresh();
+  }
+
+  /* =========================================================
+     SIGN-UPS (agent registration form on the home page and /register/)
+     ========================================================= */
+  // WhatsApp: a 10-digit number is Indian, so add the 91 country code
+  const waLink = (v) => { const d = String(v || '').replace(/\D/g, ''); return d.length >= 8 ? `https://wa.me/${d.length === 10 ? '91' + d : d}` : ''; };
+  const tgLink = (v) => { const u = String(v || '').trim().replace(/^https?:\/\/t\.me\//i, '').replace(/^@/, ''); return /^[A-Za-z0-9_]{4,32}$/.test(u) ? `https://t.me/${u}` : ''; };
+  const formName = (p) => ({ '/': 'Home page', '/register/': 'Register page' }[p] || p || '—');
+
+  async function renderSignups() {
+    let items = (await api('/signups')).items;
+    view.innerHTML = `
+      <div class="page-head"><h1>Sign-ups</h1>
+        <button class="btn" id="signups-export" style="margin-left:auto">Download CSV</button></div>
+      <p class="hint" style="margin:-8px 0 16px">People who filled in the agent registration form on the home page or the Register page. Click a WhatsApp number or Telegram username to message them.</p>
+      <div class="toolbar">
+        <span class="pill" id="signups-count"></span>
+        <label class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input class="input" id="signups-search" type="search" placeholder="Search sign-ups…"></label>
+      </div>
+      <div class="card"><div class="table-wrap" style="border:0">
+        <table class="posts">
+          <thead><tr><th>Received</th><th>Name</th><th>Contact</th><th>Message</th><th>Form</th><th></th></tr></thead>
+          <tbody id="signups-body"></tbody>
+        </table>
+      </div></div>`;
+
+    const contact = (s) => {
+      const url = /telegram/i.test(s.contactVia) ? tgLink(s.contact) : waLink(s.contact);
+      return `<span class="pill">${esc(s.contactVia || '—')}</span>${url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(s.contact)}</a>` : esc(s.contact)}
+        <div class="muted"><a href="mailto:${esc(s.email)}">${esc(s.email)}</a></div>`;
+    };
+    function draw() {
+      const q = $('#signups-search').value.trim().toLowerCase();
+      const shown = q ? items.filter((s) => [s.name, s.email, s.contact, s.message].join(' ').toLowerCase().includes(q)) : items;
+      $('#signups-count').textContent = `${items.length} total`;
+      $('#signups-body').innerHTML = shown.map((s) => `
+        <tr>
+          <td class="date-cell">${fmtDate(s.date)}<small>${fmtTime(s.date)}</small></td>
+          <td><strong>${esc(s.name)}</strong></td>
+          <td>${contact(s)}</td>
+          <td style="max-width:340px;white-space:pre-wrap">${s.message ? esc(s.message) : '<span class="muted">—</span>'}</td>
+          <td class="muted">${esc(formName(s.page))}</td>
+          <td style="text-align:right"><button class="btn btn-sm btn-danger" data-sdel="${esc(s.id)}">Delete</button></td>
+        </tr>`).join('') || `<tr><td colspan="6"><div class="empty">${items.length ? 'No sign-ups match your search.' : 'No sign-ups yet. They will appear here as soon as someone fills in the registration form.'}</div></td></tr>`;
+    }
+
+    $('#signups-search').addEventListener('input', draw);
+    // spreadsheet apps run cells that start with = + - @ as formulas – prefix those with '
+    const cell = (v) => `"${String(v ?? '').replace(/^[=+\-@]/, "'$&").replace(/"/g, '""')}"`;
+    $('#signups-export').onclick = () => {
+      const rows = [['Received', 'Name', 'Email', 'Contact via', 'WhatsApp / Telegram', 'Message', 'Form'],
+        ...items.map((s) => [new Date(s.date).toLocaleString(), s.name, s.email, s.contactVia, s.contact, s.message, formName(s.page)])];
+      const blob = new Blob(['﻿' + rows.map((r) => r.map(cell).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
+      const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `sign-ups-${new Date().toISOString().slice(0, 10)}.csv` });
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    };
+    view.addEventListener('click', async (e) => {
+      const d = e.target.closest('[data-sdel]');
+      if (!d) return;
+      const s = items.find((x) => x.id === d.dataset.sdel);
+      if (!confirm(`Delete the sign-up from "${s ? s.name : ''}"? This can't be undone.`)) return;
+      try { items = (await api(`/signups/${encodeURIComponent(d.dataset.sdel)}`, { method: 'DELETE' })).items; draw(); toast('Sign-up deleted.'); }
+      catch (ex) { toast(esc(ex.message), 'err'); }
+    });
+    draw();
   }
 
   /* =========================================================

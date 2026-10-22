@@ -4,3 +4,4 @@ content/backup-*/
 *.tmp
 *.log
 .env
+content/signups.json

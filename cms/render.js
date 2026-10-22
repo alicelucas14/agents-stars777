@@ -562,7 +562,8 @@ function renderArchive({ type, slug, name, posts, page, total, terms }) {
 
 /* ---------- sitemap / robots.txt / RSS ---------- */
 
-const postIndexable = (p) => !(p.robots && p.robots.noindex) && (!p.canonical || abs(p.canonical) === abs(postUrl(p)));
+// a redirect on the post's URL means visitors never see it, so it stays out of the sitemap / feed too
+const postIndexable = (p) => !(p.robots && p.robots.noindex) && (!p.canonical || abs(p.canonical) === abs(postUrl(p))) && !seo.findRedirect(postUrl(p));
 
 function defaultRobotsTxt() {
   return [

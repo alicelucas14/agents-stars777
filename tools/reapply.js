@@ -7,7 +7,7 @@
  *   node tools/reapply.js
  *
  * Steps: header menu -> static-page SEO overrides -> global SEO head + H1 fix
- * -> social bar -> clean-hash script -> rebuild posts/archives/sitemap/404.
+ * -> social bar -> clean-hash script -> sign-up form script -> rebuild posts/archives/sitemap/404.
  * Safe to run any time. Restart the server afterwards.
  */
 const fs = require('fs');
@@ -17,6 +17,7 @@ const seo = require('../cms/seo');
 const menu = require('../cms/menu');
 const social = require('../cms/social');
 const cleanhash = require('../cms/cleanhash');
+const signups = require('../cms/signups');
 const render = require('../cms/render');
 
 const step = (name, fn) => {
@@ -33,5 +34,6 @@ step('static page SEO overrides', () => seo.reapplyPages());
 step('global SEO head + H1', () => seo.applyGlobalToStatic());
 step('social bar', () => social.applyAll());
 step('clean-hash', () => cleanhash.applyAll());
+step('sign-up forms', () => signups.applyAll());
 step('rebuild posts/archives', () => render.buildAll());
 console.log('\nDone. Now restart the server.');

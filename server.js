@@ -20,6 +20,7 @@ const menu = require('./cms/menu');
 const social = require('./cms/social');
 const cleanhash = require('./cms/cleanhash');
 const legacy = require('./cms/legacy');
+const signups = require('./cms/signups');
 
 auth.load(); // creates the first admin account if none exists
 
@@ -55,9 +56,12 @@ let building = Promise.resolve();
 // a failed build must not block the ones queued after it
 const rebuild = () => (building = building.catch(() => {}).then(() => render.buildAll()).catch((e) => { console.error('Build failed:', e); throw e; }));
 
+// the visitor's address: behind Cloudflare, req.ip is the Cloudflare edge shared by many visitors
+const clientIp = (req) => String(req.headers['cf-connecting-ip'] || req.ip || '');
+
 /* ---------- auth ---------- */
 app.post('/api/login', (req, res) => {
-  const ip = req.ip;
+  const ip = clientIp(req);
   if (auth.rateLimited(ip)) return res.status(429).json({ error: 'Too many attempts. Try again in 15 minutes.' });
   const { username, password } = req.body || {};
   if (!auth.verify(String(username || ''), String(password || ''))) {
@@ -71,6 +75,14 @@ app.post('/api/logout', (req, res) => { auth.clear(res); res.json({ ok: true });
 app.get('/api/me', (req, res) => {
   const user = auth.userFrom(req);
   return user ? res.json({ user, siteUrl: cfg.SITE_URL, siteName: cfg.SITE_NAME }) : res.status(401).json({ error: 'Not logged in' });
+});
+
+/* ---------- agent sign-ups (public registration form on / and /register/) ---------- */
+app.post('/api/signup', (req, res) => {
+  const b = req.body || {};
+  const r = signups.add(b.fields, { page: b.page, ip: clientIp(req) });
+  if (r.error) return res.status(r.limited ? 429 : 400).json({ error: r.error });
+  res.json({ ok: true, message: signups.THANKS });
 });
 
 const api = express.Router();
@@ -380,6 +392,10 @@ api.get('/media', (req, res) => {
   res.json(out.slice(0, +req.query.limit || 300));
 });
 
+/* ---------- sign-ups ---------- */
+api.get('/signups', (req, res) => res.json({ items: signups.list() }));
+api.delete('/signups/:id', (req, res) => res.json({ items: signups.remove(req.params.id) }));
+
 /* ---------- account ---------- */
 api.post('/password', (req, res) => {
   const { current, next: pw } = req.body || {};
@@ -452,6 +468,13 @@ function notFound(req, res) {
 }
 // old WordPress links: /?p=123, /?page_id=16, /?s=…
 app.use(legacy.wpQuery(notFound));
+// the registration form posted without JavaScript arrives at the page URL itself
+app.post('*', express.urlencoded({ extended: true, limit: '20kb' }), (req, res, next) => {
+  const fields = req.body && req.body.form_fields;
+  if (!fields || typeof fields !== 'object') return next();
+  const r = signups.add(fields, { page: req.path, ip: clientIp(req) });
+  res.redirect(303, `/${req.path.replace(/^\/+/, '')}?registered=${r.error ? 0 : 1}`);
+});
 app.get(['/feed', '/feed/'], (req, res, next) => {
   const f = path.join(cfg.SITE_DIR, 'feed.xml');
   if (!fs.existsSync(f)) return next();
@@ -487,3 +510,4 @@ try { if (!fs.existsSync(path.join(cfg.SITE_DIR, '404.html'))) render.write404()
 try { seo.applyGlobalToStatic(); } catch (e) { console.warn('SEO head injection skipped:', e.message); }
 try { social.applyAll(); } catch (e) { console.warn('Social bar injection skipped:', e.message); }
 try { cleanhash.applyAll(); } catch (e) { console.warn('Clean-hash injection skipped:', e.message); }
+try { signups.applyAll(); } catch (e) { console.warn('Sign-up form script skipped:', e.message); }

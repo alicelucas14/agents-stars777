@@ -305,7 +305,24 @@ s0.parentNode.insertBefore(s1,s0);
 					</button>
 				</div>
 			</div>
-		</form>
+		</form><!--cms:signup--><script>(function(){
+var OK="Thank you! We've received your registration and will contact you shortly.",ERR="Sorry, something went wrong. Please try again, or contact us on WhatsApp or Telegram.";
+function note(f,ok,t){var o=f.querySelector(".elementor-message");if(o)o.parentNode.removeChild(o);var d=document.createElement("div");d.className="elementor-message elementor-message-"+(ok?"success":"danger");d.setAttribute("role","alert");d.textContent=t;f.appendChild(d);}
+document.querySelectorAll("form.elementor-form").forEach(function(f){if(f.querySelector("[name='form_fields[company_url]']"))return;var h=document.createElement("input");h.type="text";h.name="form_fields[company_url]";h.tabIndex=-1;h.autocomplete="off";h.setAttribute("aria-hidden","true");h.style.cssText="position:absolute;left:-9999px;width:1px;height:1px;opacity:0";f.appendChild(h);});
+document.addEventListener("submit",function(e){
+var f=e.target;if(!f||!f.matches||!f.matches("form.elementor-form"))return;
+e.preventDefault();e.stopImmediatePropagation();if(f.getAttribute("data-sending"))return;
+var data={};new FormData(f).forEach(function(v,k){var m=/^form_fields\[(.+)\]$/.exec(k);if(m)data[m[1]]=String(v);});
+var b=f.querySelector("[type=submit]");f.setAttribute("data-sending","1");if(b)b.disabled=true;
+fetch("/api/signup",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({fields:data,page:location.pathname})})
+.then(function(r){return r.json().catch(function(){return{};}).then(function(j){return{ok:r.ok,j:j};});})
+.then(function(x){if(x.ok){f.reset();note(f,true,x.j.message||OK);}else note(f,false,x.j.error||ERR);})
+.catch(function(){note(f,false,ERR);})
+.then(function(){f.removeAttribute("data-sending");if(b)b.disabled=false;});
+},true);
+var q=/[?&]registered=([01])/.exec(location.search),f0=document.querySelector("form.elementor-form");
+if(q&&f0)note(f0,q[1]==="1",q[1]==="1"?OK:"Please fill in all the required fields and try again.");
+})();</script><!--/cms:signup-->
 						</div>
 				</div>
 					</div>
