@@ -601,7 +601,8 @@ function writeSitemap(posts, archives, pages = []) {
       if (/noindex/i.test(head.robots)) continue;
       // an old copy whose canonical points at another URL is a duplicate – keep it out of the sitemap
       if (!o.canonical && head.canonical && abs(head.canonical).replace(/\/?$/, '/') !== (cfg.SITE_URL + p.path).replace(/\/?$/, '/')) continue;
-      urls.set(p.path, { mod: fs.statSync(p.file).mtime });
+      // the page's own "modified" date – the file's mtime only says when it was last deployed
+      urls.set(p.path, { mod: (head.modified && !isNaN(new Date(head.modified)) && head.modified) || fs.statSync(p.file).mtime });
     }
   }
   if (s.sitemap.posts !== false) for (const p of posts) if (postIndexable(p)) urls.set(postUrl(p), { mod: p.modified || p.date, img: p.featuredImage || firstImage(p.content) });

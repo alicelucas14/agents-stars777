@@ -19,12 +19,9 @@ const seo = require('./cms/seo');
 const menu = require('./cms/menu');
 const social = require('./cms/social');
 const cleanhash = require('./cms/cleanhash');
+const legacy = require('./cms/legacy');
 
 auth.load(); // creates the first admin account if none exists
-try { if (!fs.existsSync(path.join(cfg.SITE_DIR, '404.html'))) render.write404(); } catch (e) { console.warn('404 page not generated:', e.message); }
-try { seo.applyGlobalToStatic(); } catch (e) { console.warn('SEO head injection skipped:', e.message); }
-try { social.applyAll(); } catch (e) { console.warn('Social bar injection skipped:', e.message); }
-try { cleanhash.applyAll(); } catch (e) { console.warn('Clean-hash injection skipped:', e.message); }
 
 const app = express();
 app.disable('x-powered-by');
@@ -55,7 +52,8 @@ app.use(express.json({ limit: '10mb' }));
 
 /* ---------- build queue (serialises rebuilds) ---------- */
 let building = Promise.resolve();
-const rebuild = () => (building = building.then(() => render.buildAll()).catch((e) => { console.error('Build failed:', e); throw e; }));
+// a failed build must not block the ones queued after it
+const rebuild = () => (building = building.catch(() => {}).then(() => render.buildAll()).catch((e) => { console.error('Build failed:', e); throw e; }));
 
 /* ---------- auth ---------- */
 app.post('/api/login', (req, res) => {
@@ -447,6 +445,13 @@ app.use((req, res, next) => {
   if (r) return res.redirect(r.type || 301, /^https?:/i.test(r.to) ? r.to : encodeURI(r.to));
   next();
 });
+function notFound(req, res) {
+  const nf = path.join(cfg.SITE_DIR, '404.html');
+  res.status(404);
+  return fs.existsSync(nf) ? res.sendFile(nf) : res.type('text').send('Page not found');
+}
+// old WordPress links: /?p=123, /?page_id=16, /?s=…
+app.use(legacy.wpQuery(notFound));
 app.get(['/feed', '/feed/'], (req, res, next) => {
   const f = path.join(cfg.SITE_DIR, 'feed.xml');
   if (!fs.existsSync(f)) return next();
@@ -467,13 +472,18 @@ app.use(express.static(cfg.SITE_DIR, {
     else res.setHeader('Cache-Control', 'public, max-age=86400');
   },
 }));
-app.use((req, res) => {
-  const nf = path.join(cfg.SITE_DIR, '404.html');
-  res.status(404);
-  return fs.existsSync(nf) ? res.sendFile(nf) : res.type('text').send('Page not found');
-});
+// old WordPress URL variants (feeds, /amp/, pasted quotes, capitals) -> 301 to the live page
+app.use(legacy.oldPaths);
+app.use(notFound);
 
 app.listen(cfg.PORT, () => {
   console.log(`Site:  http://localhost:${cfg.PORT}/`);
   console.log(`Admin: http://localhost:${cfg.PORT}/admin/`);
 });
+
+// Page injections take a few seconds. They run after the port is open, so during a restart
+// requests wait for them instead of failing (the proxy answers 502 while nothing listens).
+try { if (!fs.existsSync(path.join(cfg.SITE_DIR, '404.html'))) render.write404(); } catch (e) { console.warn('404 page not generated:', e.message); }
+try { seo.applyGlobalToStatic(); } catch (e) { console.warn('SEO head injection skipped:', e.message); }
+try { social.applyAll(); } catch (e) { console.warn('Social bar injection skipped:', e.message); }
+try { cleanhash.applyAll(); } catch (e) { console.warn('Clean-hash injection skipped:', e.message); }

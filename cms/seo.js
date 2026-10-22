@@ -148,6 +148,7 @@ function readHeadInfo(file) {
     ogTitle: pick(/<meta\s+property=["']og:title["']\s+content=["']([^"']*)["']/i),
     ogDescription: pick(/<meta\s+property=["']og:description["']\s+content=["']([^"']*)["']/i),
     ogImage: pick(/<meta\s+property=["']og:image["']\s+content=["']([^"']*)["']/i),
+    modified: pick(/<meta\s+property=["'](?:article:modified_time|og:updated_time)["']\s+content=["']([^"']*)["']/i),
   };
 }
 
@@ -233,6 +234,27 @@ const deadWpLink = (tag) =>
   || (/\brel=["']alternate["']/i.test(tag) && /\btype=["'](?:application\/json\+oembed|text\/xml\+oembed|application\/json|application\/rss\+xml)["']/i.test(tag));
 const stripDeadWpLinks = (head) => head.replace(/[ \t]*<link\b[^>]*>[ \t]*\r?\n?/gi, (tag) => (deadWpLink(tag) ? '' : tag));
 
+/** Rank Math's WebSite schema advertises a /?s= site search, which no longer exists. */
+function stripSearchAction(head) {
+  return head.replace(/(<script\b[^>]*application\/ld\+json[^>]*>)([\s\S]*?)(<\/script>)/gi, (all, open, json, close) => {
+    if (!json.includes('SearchAction')) return all;
+    let data;
+    try { data = JSON.parse(json); } catch { return all; }
+    const drop = (n) => {
+      if (!n || typeof n !== 'object') return;
+      if (Array.isArray(n)) { n.forEach(drop); return; }
+      if (n.potentialAction) {
+        const list = [].concat(n.potentialAction).filter((a) => !(a && a['@type'] === 'SearchAction'));
+        if (!list.length) delete n.potentialAction;
+        else n.potentialAction = Array.isArray(n.potentialAction) ? list : list[0];
+      }
+      Object.values(n).forEach(drop);
+    };
+    drop(data);
+    return open + JSON.stringify(data).replace(/</g, '\\u003c') + close;
+  });
+}
+
 /** Inject the global head block into every static page (and fix the domain if SITE_URL changed). */
 function applyGlobalToStatic() {
   const block = wrapGlobal();
@@ -245,7 +267,7 @@ function applyGlobalToStatic() {
     let out = html.replace(/\n?<!--cms:global-->[\s\S]*?<!--\/cms:global-->/, '');
     const i = out.search(/<\/head>/i);
     if (i === -1) continue;
-    let head = stripDeadWpLinks(out.slice(0, i)), rest = out.slice(i);
+    let head = stripSearchAction(stripDeadWpLinks(out.slice(0, i))), rest = out.slice(i);
     if (cfg.SITE_URL !== cfg.ORIGIN) head = head.split(cfg.ORIGIN).join(cfg.SITE_URL);
     out = `${head}${block}\n${rest}`;
     const h = ensureH1(out); // one <h1> per page (SEO)

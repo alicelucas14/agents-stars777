@@ -27,20 +27,33 @@
   "headCode": "<!-- Google Analytics (GA4) -->\n<script async src=\"https://www.googletagmanager.com/gtag/js?id=G-SS0MNWTKWZ\"></script>\n<script>\n  window.dataLayer = window.dataLayer || [];\n  function gtag(){dataLayer.push(arguments);}\n  gtag('js', new Date());\n  gtag('config', 'G-SS0MNWTKWZ');\n  gtag('config', 'G-N4770T2SRR');\n</script>",
   "index": {
     "categories": true,
-    "tags": true,
-    "authors": true,
+    "tags": false,
+    "authors": false,
     "paginated": true
   },
   "sitemap": {
     "posts": true,
     "pages": true,
     "categories": true,
-    "tags": true,
+    "tags": false,
     "authors": false
   },
   "rss": true,
   "robotsTxt": "",
-  "redirects": [],
+  "redirects": [
+    {
+      "from": "/mastering-online-blackjack--top-casinos-2024/",
+      "to": "/mastering-online-blackjack-top-casinos-2024/",
+      "type": 301,
+      "created": "2026-10-22T07:07:02.325Z"
+    },
+    {
+      "from": "/best-slot-games-top-picks-for-real-money-players-in-india/",
+      "to": "/best-slot-games-top-picks-for-real-money/",
+      "type": 301,
+      "created": "2026-10-22T07:07:02.325Z"
+    }
+  ],
   "terms": {
     "tags:agent-guide": {
       "title": "",
