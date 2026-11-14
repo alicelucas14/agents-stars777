@@ -23,5 +23,8 @@
     "express": "^4.22.3",
     "multer": "^2.4.0",
     "tinymce": "^7.9.3"
+  },
+  "optionalDependencies": {
+    "sharp": "^0.35.5"
   }
 }

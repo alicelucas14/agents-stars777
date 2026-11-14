@@ -55,7 +55,25 @@ const wpQuery = (notFound) => (req, res, next) => {
 };
 
 /* ---------- old path variants ---------- */
-const JUNK = /[\s"'“”‘’″,.;:)\]>]+(\/?)$/u;
+// characters pasted onto the end of links (quotes, punctuation, spaces)
+const JUNK_CHAR = /^[\s"'“”‘’″,.;:)\]>]$/u;
+
+/**
+ * Strip trailing junk characters, keeping one final "/" ("/x/%E2%80%9D" -> "/x/", "/x." -> "/x").
+ * Same result as repeatedly applying /[junk]+(\/?)$/ but in one linear pass – that regex took
+ * quadratic time on long junk URLs, which let a single visitor stall the server.
+ */
+function stripJunk(x) {
+  for (;;) {
+    if (x === '/') return x;
+    const slash = x.endsWith('/') ? 1 : 0;
+    let i = x.length - slash;
+    while (i > 0 && JUNK_CHAR.test(x[i - 1])) i--;
+    if (i === x.length - slash) return x;
+    x = x.slice(0, i) + (slash ? '/' : '');
+  }
+}
+
 const FEED = /\/feed(?:\/(?:rss2?|atom|rdf))?\/?$/i;
 const SUFFIX = /\/(?:amp|embed|trackback|comment-page-\d+|page\/1|attachment\/[^/]+)\/?$/i;
 
@@ -78,8 +96,8 @@ function oldPaths(req, res, next) {
   try { p = decodeURIComponent(req.path); } catch { return next(); }
   if (/\.[a-z0-9]{2,5}$/i.test(p)) return next(); // missing asset or file, not a page
 
-  let x = p;
-  while (JUNK.test(x) && x !== '/') x = x.replace(JUNK, '$1');
+  if (p.length > 1000) return next(); // no real page has a path this long
+  let x = stripJunk(p);
   let to = null;
   if (FEED.test(x) || /^\/comments\/feed\/?$/i.test(x)) {
     to = fs.existsSync(path.join(cfg.SITE_DIR, 'feed.xml')) ? '/feed/' : null;
@@ -92,4 +110,4 @@ function oldPaths(req, res, next) {
   res.redirect(301, to + (q === -1 ? '' : req.originalUrl.slice(q)));
 }
 
-module.exports = { wpQuery, oldPaths, urlForId };
+module.exports = { wpQuery, oldPaths, urlForId, stripJunk };

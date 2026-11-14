@@ -21,6 +21,7 @@ const social = require('./cms/social');
 const cleanhash = require('./cms/cleanhash');
 const legacy = require('./cms/legacy');
 const signups = require('./cms/signups');
+const images = require('./cms/images');
 
 auth.load(); // creates the first admin account if none exists
 
@@ -49,7 +50,11 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json({ limit: '10mb' }));
+// JSON bodies: the public login + sign-up forms get a small limit; the 10 MB limit (long posts)
+// only applies on the admin API, after the login check – so anonymous visitors can't send
+// huge bodies for the server to parse.
+const publicJson = express.json({ limit: '16kb' });
+const adminJson = express.json({ limit: '10mb' });
 
 /* ---------- build queue (serialises rebuilds) ---------- */
 let building = Promise.resolve();
@@ -60,11 +65,21 @@ const rebuild = () => (building = building.catch(() => {}).then(() => render.bui
 const clientIp = (req) => String(req.headers['cf-connecting-ip'] || req.ip || '');
 
 /* ---------- auth ---------- */
-app.post('/api/login', (req, res) => {
+// password checks run off the main thread; a cap on simultaneous checks keeps a flood of
+// login attempts from tying up the threads the site also uses to read files
+let loginsInFlight = 0;
+const MAX_LOGINS_IN_FLIGHT = 2;
+app.post('/api/login', publicJson, async (req, res, next) => {
   const ip = clientIp(req);
   if (auth.rateLimited(ip)) return res.status(429).json({ error: 'Too many attempts. Try again in 15 minutes.' });
+  if (loginsInFlight >= MAX_LOGINS_IN_FLIGHT) return res.status(429).json({ error: 'Too many login attempts right now. Try again in a moment.' });
   const { username, password } = req.body || {};
-  if (!auth.verify(String(username || ''), String(password || ''))) {
+  loginsInFlight++;
+  let ok;
+  try { ok = await auth.verifyAsync(String(username || ''), String(password || '')); }
+  catch (e) { return next(e); }
+  finally { loginsInFlight--; }
+  if (!ok) {
     auth.recordFailure(ip);
     return res.status(401).json({ error: 'Invalid username or password' });
   }
@@ -78,7 +93,7 @@ app.get('/api/me', (req, res) => {
 });
 
 /* ---------- agent sign-ups (public registration form on / and /register/) ---------- */
-app.post('/api/signup', (req, res) => {
+app.post('/api/signup', publicJson, (req, res) => {
   const b = req.body || {};
   const r = signups.add(b.fields, { page: b.page, ip: clientIp(req) });
   if (r.error) return res.status(r.limited ? 429 : 400).json({ error: r.error });
@@ -87,6 +102,7 @@ app.post('/api/signup', (req, res) => {
 
 const api = express.Router();
 api.use(auth.requireAuth);
+api.use(adminJson);
 
 /* ---------- posts ---------- */
 const summary = (p) => ({
@@ -259,7 +275,7 @@ api.put('/terms/:type/:slug', async (req, res, next) => {
   try {
     const { type, slug } = req.params;
     const terms = store.getTerms();
-    if (!terms[type] || !(slug in terms[type])) return res.status(404).json({ error: 'Term not found' });
+    if (!['categories', 'tags', 'authors'].includes(type) || !terms[type] || !Object.hasOwn(terms[type], slug)) return res.status(404).json({ error: 'Term not found' });
     const b = req.body || {};
     if (String(b.name || '').trim()) { terms[type][slug] = String(b.name).trim(); store.saveTerms(terms); }
     const s = seo.get();
@@ -369,9 +385,10 @@ const upload = multer({
   }),
 });
 
-api.post('/media', upload.single('file'), (req, res) => {
+api.post('/media', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Only image files are allowed (jpg, png, gif, webp, avif, svg).' });
-  const rel = path.relative(cfg.SITE_DIR, req.file.path).split(path.sep).join('/');
+  const file = await images.optimize(req.file.path); // large photos -> resized WebP (never fails)
+  const rel = path.relative(cfg.SITE_DIR, file).split(path.sep).join('/');
   res.json({ location: `/${rel}`, url: `/${rel}` });
 });
 
@@ -401,7 +418,8 @@ api.post('/password', (req, res) => {
   const { current, next: pw } = req.body || {};
   if (!auth.verify(req.user, String(current || ''))) return res.status(400).json({ error: 'Current password is incorrect' });
   if (!pw || String(pw).length < 8) return res.status(400).json({ error: 'New password must be at least 8 characters' });
-  auth.setPassword(req.user, String(pw));
+  auth.setPassword(req.user, String(pw)); // logs out this user's other sessions
+  auth.issue(res, req.user, req.secure);  // …but keeps this browser logged in
   res.json({ ok: true });
 });
 
@@ -423,7 +441,8 @@ api.put('/users/:username/password', (req, res) => {
   const pw = String((req.body || {}).password || '');
   if (!auth.userExists(username)) return res.status(404).json({ error: 'User not found.' });
   if (pw.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
-  auth.setPassword(username, pw);
+  auth.setPassword(username, pw); // logs that user out everywhere
+  if (username === req.user) auth.issue(res, req.user, req.secure); // except the admin doing it
   res.json({ ok: true });
 });
 

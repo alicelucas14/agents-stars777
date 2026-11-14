@@ -15,6 +15,7 @@ const crypto = require('crypto');
 const cfg = require('./config');
 const store = require('./store');
 const seo = require('./seo');
+const { ipKey } = require('./net');
 
 const FILE = path.join(cfg.CONTENT_DIR, 'signups.json');
 const MAX_KEPT = 10000;
@@ -58,7 +59,14 @@ function clean(fields = {}) {
 function add(fields, meta = {}) {
   const r = clean(fields);
   if (!r.entry) return r;
-  if (rateLimited(meta.ip || '')) return { error: 'Too many sign-ups from your connection – please try again in an hour.', limited: true };
+  if (rateLimited(ipKey(meta.ip || ''))) return { error: 'Too many sign-ups from your connection – please try again in an hour.', limited: true };
+  if (siteBusy()) {
+    if (Date.now() - lastBusyWarning > 600e3) {
+      lastBusyWarning = Date.now();
+      console.warn('Sign-ups: %d in the last hour – new ones are refused until it drops (spam flood?)', SITE_MAX_PER_HOUR);
+    }
+    return { error: 'We are receiving a lot of registrations right now – please try again in a little while, or contact us on WhatsApp or Telegram.', limited: true };
+  }
   const entry = {
     id: crypto.randomBytes(6).toString('hex'),
     date: new Date().toISOString(),
@@ -70,7 +78,19 @@ function add(fields, meta = {}) {
   return { entry };
 }
 
-/* ---------- simple per-IP limit: 5 sign-ups an hour ---------- */
+/* ---------- site-wide ceiling: stops a flood from pushing real sign-ups out of the list ---------- */
+const SITE_MAX_PER_HOUR = 100;
+let siteHits = [];
+let lastBusyWarning = 0;
+function siteBusy() {
+  const now = Date.now();
+  siteHits = siteHits.filter((t) => now - t < 3600e3);
+  if (siteHits.length >= SITE_MAX_PER_HOUR) return true;
+  siteHits.push(now);
+  return false;
+}
+
+/* ---------- simple per-visitor limit: 5 sign-ups an hour (IPv6: per /64 network) ---------- */
 const hits = new Map();
 function rateLimited(ip) {
   const now = Date.now();

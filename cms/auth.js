@@ -5,13 +5,18 @@
  */
 const crypto = require('crypto');
 const fs = require('fs');
+const { promisify } = require('util');
 const cfg = require('./config');
 const store = require('./store');
+const { ipKey } = require('./net');
 
 const COOKIE = 'cms_session';
 const MAX_AGE = 7 * 24 * 3600; // seconds
 
 const hash = (pw, salt) => crypto.scryptSync(String(pw), salt, 64).toString('hex');
+const scryptAsync = promisify(crypto.scrypt);
+// same result as hash(), but computed off the main thread so a login doesn't pause the whole site
+const hashAsync = async (pw, salt) => (await scryptAsync(String(pw), salt, 64)).toString('hex');
 
 function load() {
   let a = store.readJson(cfg.AUTH_FILE, null);
@@ -35,18 +40,31 @@ function load() {
 function setPassword(username, password) {
   const a = store.readJson(cfg.AUTH_FILE, null) || { secret: crypto.randomBytes(32).toString('hex'), users: [] };
   const salt = crypto.randomBytes(16).toString('hex');
+  // sessions issued before this moment stop working (see userFrom)
+  const pwChanged = Math.floor(Date.now() / 1000);
   const user = a.users.find((u) => u.username === username);
-  if (user) Object.assign(user, { salt, hash: hash(password, salt) });
-  else a.users.push({ username, salt, hash: hash(password, salt) });
+  if (user) Object.assign(user, { salt, hash: hash(password, salt), pwChanged });
+  else a.users.push({ username, salt, hash: hash(password, salt), pwChanged });
   store.writeJson(cfg.AUTH_FILE, a);
 }
+
+const same = (hex, stored) => {
+  const a = Buffer.from(hex, 'hex');
+  const b = Buffer.from(stored, 'hex');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+};
 
 function verify(username, password) {
   const user = load().users.find((u) => u.username === username);
   if (!user) { hash(password, 'dummy-salt'); return false; } // constant-ish time
-  const a = Buffer.from(hash(password, user.salt), 'hex');
-  const b = Buffer.from(user.hash, 'hex');
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
+  return same(hash(password, user.salt), user.hash);
+}
+
+/** verify() without blocking the server while the password hash is computed (used by the login form). */
+async function verifyAsync(username, password) {
+  const user = load().users.find((u) => u.username === username);
+  if (!user) { await hashAsync(password, 'dummy-salt'); return false; } // constant-ish time
+  return same(await hashAsync(password, user.salt), user.hash);
 }
 
 const sign = (data) => crypto.createHmac('sha256', load().secret).update(data).digest('base64url');
@@ -71,7 +89,11 @@ function userFrom(req) {
   if (sig.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
   if (+exp < Date.now() / 1000) return null;
   const username = Buffer.from(u, 'base64url').toString();
-  return load().users.some((x) => x.username === username) ? username : null;
+  const user = load().users.find((x) => x.username === username);
+  if (!user) return null;
+  // a password change logs out sessions issued before it (issued = expiry - MAX_AGE)
+  if (user.pwChanged && +exp - MAX_AGE < user.pwChanged) return null;
+  return username;
 }
 
 function requireAuth(req, res, next) {
@@ -81,15 +103,24 @@ function requireAuth(req, res, next) {
   next();
 }
 
-/* simple brute-force protection */
+/* simple brute-force protection: 10 failed logins per 15 minutes per visitor (IPv6: per /64) */
+const WINDOW = 15 * 60 * 1000;
 const attempts = new Map();
 function rateLimited(ip) {
+  const key = ipKey(ip);
   const now = Date.now();
-  const list = (attempts.get(ip) || []).filter((t) => now - t < 15 * 60 * 1000);
-  attempts.set(ip, list);
+  const list = (attempts.get(key) || []).filter((t) => now - t < WINDOW);
+  if (list.length) attempts.set(key, list); else attempts.delete(key);
   return list.length >= 10;
 }
-const recordFailure = (ip) => attempts.set(ip, [...(attempts.get(ip) || []), Date.now()]);
+function recordFailure(ip) {
+  const key = ipKey(ip);
+  attempts.set(key, [...(attempts.get(key) || []), Date.now()]);
+  if (attempts.size > 5000) { // forget visitors whose failures are all old
+    const now = Date.now();
+    for (const [k, v] of attempts) if (!v.some((t) => now - t < WINDOW)) attempts.delete(k);
+  }
+}
 
 /* ---------- user management ---------- */
 const USERNAME_RE = /^[a-z0-9][a-z0-9._-]{2,31}$/; // 3–32 chars, lowercase
@@ -111,6 +142,6 @@ function deleteUser(username) {
 }
 
 module.exports = {
-  load, setPassword, verify, issue, clear, userFrom, requireAuth, rateLimited, recordFailure,
+  load, setPassword, verify, verifyAsync, issue, clear, userFrom, requireAuth, rateLimited, recordFailure,
   validUsername, listUsers, userExists, addUser, deleteUser,
 };
