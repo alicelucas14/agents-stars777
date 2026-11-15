@@ -42,6 +42,17 @@ app.use((req, res, next) => {
 
 app.use(compression({ threshold: 1024 }));
 
+/* ---------- caching defaults ----------
+ * Anything that does not set its own rule is "check with the server before reusing it", and
+ * the admin API (sign-ups, posts) is never stored anywhere. Static files below override this
+ * (30-day assets, revalidated pages). The server's nginx used to add `Cache-Control: no-cache`
+ * to everything; saying it here keeps the site behaving the same without that line, and lets
+ * Cloudflare keep images/CSS/JS in its cache instead of re-checking the server every time. */
+app.use((req, res, next) => {
+  res.setHeader('Cache-Control', req.path === '/api' || req.path.startsWith('/api/') ? 'no-store' : 'no-cache');
+  next();
+});
+
 /* ---------- security headers ---------- */
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -511,6 +522,8 @@ app.use(express.static(cfg.SITE_DIR, {
     // an SVG opened directly could run script on our domain – render it as a plain image only
     if (/\.svg$/i.test(filePath)) res.setHeader('Content-Security-Policy', "default-src 'none'; img-src data: 'self'; style-src 'unsafe-inline'; sandbox");
     if (/\.(html|xml|txt)$/i.test(filePath)) res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+    // Elementor's generated CSS/JS keeps the same file name when its content changes: 1 day, not 30
+    else if (/[\\/]wp-content[\\/]uploads[\\/]elementor[\\/]/.test(filePath)) res.setHeader('Cache-Control', 'public, max-age=86400');
     else if (/[\\/]wp-(content|includes)[\\/]/.test(filePath)) res.setHeader('Cache-Control', 'public, max-age=2592000');
     else res.setHeader('Cache-Control', 'public, max-age=86400');
   },
