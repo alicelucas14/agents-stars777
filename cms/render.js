@@ -15,6 +15,7 @@ const store = require('./store');
 const seo = require('./seo');
 const social = require('./social');
 const cleanhash = require('./cleanhash');
+const gifswap = require('./gifswap');
 const { ensureH1 } = require('./headings');
 
 /** Body has its own <h1> (custom hero etc.): keep it, turn the theme title into a styled <p>. */
@@ -102,7 +103,7 @@ function fill(tpl, map) {
 function writePage(rel, html) {
   const file = path.join(cfg.SITE_DIR, ...rel.split('/').filter(Boolean), 'index.html');
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, cleanhash.inject(social.inject(html)));
+  fs.writeFileSync(file, gifswap.swap(cleanhash.inject(social.inject(html))));
 }
 
 /* ---------- shell compilation ---------- */

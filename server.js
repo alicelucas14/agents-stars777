@@ -19,6 +19,7 @@ const seo = require('./cms/seo');
 const menu = require('./cms/menu');
 const social = require('./cms/social');
 const cleanhash = require('./cms/cleanhash');
+const gifswap = require('./cms/gifswap');
 const legacy = require('./cms/legacy');
 const signups = require('./cms/signups');
 const images = require('./cms/images');
@@ -530,3 +531,4 @@ try { seo.applyGlobalToStatic(); } catch (e) { console.warn('SEO head injection 
 try { social.applyAll(); } catch (e) { console.warn('Social bar injection skipped:', e.message); }
 try { cleanhash.applyAll(); } catch (e) { console.warn('Clean-hash injection skipped:', e.message); }
 try { signups.applyAll(); } catch (e) { console.warn('Sign-up form script skipped:', e.message); }
+try { gifswap.applyAll(); } catch (e) { console.warn('GIF -> WebP swap skipped:', e.message); }
