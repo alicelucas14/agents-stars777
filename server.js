@@ -20,6 +20,7 @@ const menu = require('./cms/menu');
 const social = require('./cms/social');
 const cleanhash = require('./cms/cleanhash');
 const gifswap = require('./cms/gifswap');
+const cfpurge = require('./cms/cfpurge');
 const legacy = require('./cms/legacy');
 const signups = require('./cms/signups');
 const images = require('./cms/images');
@@ -71,7 +72,8 @@ const adminJson = express.json({ limit: '10mb' });
 /* ---------- build queue (serialises rebuilds) ---------- */
 let building = Promise.resolve();
 // a failed build must not block the ones queued after it
-const rebuild = () => (building = building.catch(() => {}).then(() => render.buildAll()).catch((e) => { console.error('Build failed:', e); throw e; }));
+// after a good build, clear Cloudflare's copy of the pages (no-op unless Cloudflare is configured)
+const rebuild = () => (building = building.catch(() => {}).then(() => render.buildAll()).then((r) => { cfpurge.schedule('rebuild'); return r; }).catch((e) => { console.error('Build failed:', e); throw e; }));
 
 // the visitor's address: behind Cloudflare, req.ip is the Cloudflare edge shared by many visitors
 const clientIp = (req) => String(req.headers['cf-connecting-ip'] || req.ip || '');
@@ -365,6 +367,7 @@ api.put('/social', async (req, res, next) => {
       || patch.facebookUrl !== (cur.facebookUrl || '') || patch.twitterSite !== (cur.twitterSite || '');
     if (seoChanged) { seo.save({ ...cur, ...patch }); seo.applyGlobalToStatic(); }
     const updated = social.applyAll();
+    cfpurge.schedule('social bar');
     res.json({ settings: s, updated, build: seoChanged ? await rebuild() : null });
   } catch (e) { next(e); }
 });
@@ -521,7 +524,11 @@ app.use(express.static(cfg.SITE_DIR, {
   setHeaders: (res, filePath) => {
     // an SVG opened directly could run script on our domain – render it as a plain image only
     if (/\.svg$/i.test(filePath)) res.setHeader('Content-Security-Policy', "default-src 'none'; img-src data: 'self'; style-src 'unsafe-inline'; sandbox");
-    if (/\.(html|xml|txt)$/i.test(filePath)) res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+    // pages: browsers re-check every time (max-age=0); Cloudflare may keep a page for an hour (s-maxage)
+    // and is told to drop it right after every publish (cms/cfpurge.js). Only pages say s-maxage, so
+    // nothing else (API, admin, redirects, errors, sitemap, robots) can ever be cached by Cloudflare's rule.
+    if (/\.html$/i.test(filePath)) res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=3600, must-revalidate');
+    else if (/\.(xml|txt)$/i.test(filePath)) res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
     // Elementor's generated CSS/JS keeps the same file name when its content changes: 1 day, not 30
     else if (/[\\/]wp-content[\\/]uploads[\\/]elementor[\\/]/.test(filePath)) res.setHeader('Cache-Control', 'public, max-age=86400');
     else if (/[\\/]wp-(content|includes)[\\/]/.test(filePath)) res.setHeader('Cache-Control', 'public, max-age=2592000');
@@ -545,3 +552,4 @@ try { social.applyAll(); } catch (e) { console.warn('Social bar injection skippe
 try { cleanhash.applyAll(); } catch (e) { console.warn('Clean-hash injection skipped:', e.message); }
 try { signups.applyAll(); } catch (e) { console.warn('Sign-up form script skipped:', e.message); }
 try { gifswap.applyAll(); } catch (e) { console.warn('GIF -> WebP swap skipped:', e.message); }
+cfpurge.schedule('server start'); // a deploy restarts the server, so this clears Cloudflare's old copies

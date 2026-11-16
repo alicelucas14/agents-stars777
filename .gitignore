@@ -5,3 +5,4 @@ content/backup-*/
 *.log
 .env
 content/signups.json
+content/cloudflare.json
