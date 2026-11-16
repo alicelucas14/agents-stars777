@@ -13,7 +13,7 @@
  * Calls are batched: a burst of edits becomes one purge a few seconds later, and purges are
  * spaced out to stay under Cloudflare's rate limit. Failures are logged and never thrown, so
  * publishing is never blocked; a missed purge only means pages refresh when their cache
- * lifetime (s-maxage in server.js) runs out.
+ * lifetime (Cloudflare-CDN-Cache-Control in server.js) runs out.
  */
 const fs = require('fs');
 const http = require('http');

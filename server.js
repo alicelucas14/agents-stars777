@@ -524,10 +524,15 @@ app.use(express.static(cfg.SITE_DIR, {
   setHeaders: (res, filePath) => {
     // an SVG opened directly could run script on our domain – render it as a plain image only
     if (/\.svg$/i.test(filePath)) res.setHeader('Content-Security-Policy', "default-src 'none'; img-src data: 'self'; style-src 'unsafe-inline'; sandbox");
-    // pages: browsers re-check every time (max-age=0); Cloudflare may keep a page for an hour (s-maxage)
-    // and is told to drop it right after every publish (cms/cfpurge.js). Only pages say s-maxage, so
-    // nothing else (API, admin, redirects, errors, sitemap, robots) can ever be cached by Cloudflare's rule.
-    if (/\.html$/i.test(filePath)) res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=3600, must-revalidate');
+    // pages: browsers re-check every time (max-age=0); Cloudflare may keep a page for an hour and is
+    // told to drop it right after every publish (cms/cfpurge.js). The hour is in a header only Cloudflare
+    // reads: an s-maxage in Cache-Control would also make the server's own nginx cache keep pages for an
+    // hour, and nothing clears that cache. Only pages carry it, so nothing else (API, admin, redirects,
+    // errors, sitemap, robots) can ever be cached by Cloudflare's rule.
+    if (/\.html$/i.test(filePath)) {
+      res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+      res.setHeader('Cloudflare-CDN-Cache-Control', 'max-age=3600');
+    }
     else if (/\.(xml|txt)$/i.test(filePath)) res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
     // Elementor's generated CSS/JS keeps the same file name when its content changes: 1 day, not 30
     else if (/[\\/]wp-content[\\/]uploads[\\/]elementor[\\/]/.test(filePath)) res.setHeader('Cache-Control', 'public, max-age=86400');
