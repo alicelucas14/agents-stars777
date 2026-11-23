@@ -18,7 +18,7 @@ const menu = require('../cms/menu');
 const social = require('../cms/social');
 const cleanhash = require('../cms/cleanhash');
 const signups = require('../cms/signups');
-const gifswap = require('../cms/gifswap');
+const webpswap = require('../cms/webpswap');
 const render = require('../cms/render');
 
 const step = (name, fn) => {
@@ -36,6 +36,6 @@ step('global SEO head + H1', () => seo.applyGlobalToStatic());
 step('social bar', () => social.applyAll());
 step('clean-hash', () => cleanhash.applyAll());
 step('sign-up forms', () => signups.applyAll());
-step('GIF -> WebP', () => gifswap.applyAll());
+step('images -> WebP', () => webpswap.applyAll());
 step('rebuild posts/archives', () => render.buildAll());
 console.log('\nDone. Now restart the server.');

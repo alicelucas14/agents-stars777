@@ -3,7 +3,7 @@
  * Make a small animated-WebP copy of every animated GIF in site/wp-content/uploads
  * (x.gif -> x.webp, next to the original). The originals are NOT touched or deleted:
  * they stay for social-media preview images (og:image / twitter:image), while the pages
- * themselves load the WebP (see cms/gifswap.js).
+ * themselves load the WebP (see cms/webpswap.js).
  *
  *   node tools/gif-to-webp.js            convert what is missing, skip what exists
  *   node tools/gif-to-webp.js --force    redo everything

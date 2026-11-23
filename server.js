@@ -19,7 +19,7 @@ const seo = require('./cms/seo');
 const menu = require('./cms/menu');
 const social = require('./cms/social');
 const cleanhash = require('./cms/cleanhash');
-const gifswap = require('./cms/gifswap');
+const webpswap = require('./cms/webpswap');
 const cfpurge = require('./cms/cfpurge');
 const legacy = require('./cms/legacy');
 const signups = require('./cms/signups');
@@ -416,6 +416,7 @@ api.get('/media', (req, res) => {
       if (e.isDirectory()) { if (!['elementor', 'cache'].includes(e.name)) walk(f); continue; }
       if (!IMG_EXT.test(e.name)) continue;
       if (/-\d+x\d+\.[a-z]+$/i.test(e.name)) continue; // skip WP auto-generated sizes
+      if (/\.(?:png|jpe?g)\.webp$/i.test(e.name)) continue; // WebP copies from tools/png-jpg-to-webp.js
       out.push({ url: '/' + path.relative(cfg.SITE_DIR, f).split(path.sep).join('/'), mtime: fs.statSync(f).mtimeMs });
     }
   };
@@ -556,5 +557,5 @@ try { seo.applyGlobalToStatic(); } catch (e) { console.warn('SEO head injection 
 try { social.applyAll(); } catch (e) { console.warn('Social bar injection skipped:', e.message); }
 try { cleanhash.applyAll(); } catch (e) { console.warn('Clean-hash injection skipped:', e.message); }
 try { signups.applyAll(); } catch (e) { console.warn('Sign-up form script skipped:', e.message); }
-try { gifswap.applyAll(); } catch (e) { console.warn('GIF -> WebP swap skipped:', e.message); }
+try { webpswap.applyAll(); } catch (e) { console.warn('Image -> WebP swap skipped:', e.message); }
 cfpurge.schedule('server start'); // a deploy restarts the server, so this clears Cloudflare's old copies
