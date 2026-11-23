@@ -7,3 +7,5 @@ content/backup-*/
 content/signups.json
 content/cloudflare.json
 mirror-report.json
+content/signups-unverified.json
+content/turnstile.json

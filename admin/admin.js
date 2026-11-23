@@ -2117,13 +2117,16 @@
   const formName = (p) => ({ '/': 'Home page', '/register/': 'Register page' }[p] || p || '—');
 
   async function renderSignups() {
-    let items = (await api('/signups')).items;
+    const data = await api('/signups');
+    let items = data.items;
+    let waiting = data.unverified || []; // sent without passing the bot check (see cms/signups.js)
     view.innerHTML = `
       <div class="page-head"><h1>Sign-ups</h1>
         <button class="btn" id="signups-export" style="margin-left:auto">Download CSV</button></div>
       <p class="hint" style="margin:-8px 0 16px">People who filled in the agent registration form on the home page or the Register page. Click a WhatsApp number or Telegram username to message them.</p>
       <div class="toolbar">
         <span class="pill" id="signups-count"></span>
+        <span class="pill ${data.botCheck ? 'ok' : 'warn'}" title="Cloudflare Turnstile checks that a person, not a bot, sent the form">Bot check ${data.botCheck ? 'on' : 'off'}</span>
         <label class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
           <input class="input" id="signups-search" type="search" placeholder="Search sign-ups…"></label>
       </div>
@@ -2132,7 +2135,8 @@
           <thead><tr><th>Received</th><th>Name</th><th>Contact</th><th>Message</th><th>Form</th><th></th></tr></thead>
           <tbody id="signups-body"></tbody>
         </table>
-      </div></div>`;
+      </div></div>
+      <div id="unverified"></div>`;
 
     const contact = (s) => {
       const url = /telegram/i.test(s.contactVia) ? tgLink(s.contact) : waLink(s.contact);
@@ -2153,6 +2157,28 @@
           <td style="text-align:right"><button class="btn btn-sm btn-danger" data-sdel="${esc(s.id)}">Delete</button></td>
         </tr>`).join('') || `<tr><td colspan="6"><div class="empty">${items.length ? 'No sign-ups match your search.' : 'No sign-ups yet. They will appear here as soon as someone fills in the registration form.'}</div></td></tr>`;
     }
+    // only shown when something is waiting in it
+    function drawUnverified() {
+      $('#unverified').innerHTML = !waiting.length ? '' : `
+        <div class="page-head" style="margin:32px 0 6px"><h2>Unverified <span class="pill warn">${waiting.length}</span></h2>
+          <button class="btn btn-sm btn-danger" id="unverified-clear" style="margin-left:auto">Delete all unverified</button></div>
+        <p class="hint" style="margin:0 0 16px">Sent without passing the bot check: the visitor had JavaScript turned off or blocked Cloudflare's check, or Cloudflare didn't answer. Most of these are spam. If one is a real person, click <b>Move to sign-ups</b>.</p>
+        <div class="card"><div class="table-wrap" style="border:0">
+          <table class="posts">
+            <thead><tr><th>Received</th><th>Name</th><th>Contact</th><th>Message</th><th>Why</th><th></th></tr></thead>
+            <tbody>${waiting.map((s) => `
+              <tr>
+                <td class="date-cell">${fmtDate(s.date)}<small>${fmtTime(s.date)}</small></td>
+                <td><strong>${esc(s.name)}</strong><div class="muted">${esc(formName(s.page))}</div></td>
+                <td>${contact(s)}</td>
+                <td style="max-width:340px;white-space:pre-wrap">${s.message ? esc(s.message) : '<span class="muted">—</span>'}</td>
+                <td class="muted">${s.why === 'unavailable' ? "Cloudflare didn't answer" : 'No bot check'}</td>
+                <td style="text-align:right;white-space:nowrap"><button class="btn btn-sm" data-uok="${esc(s.id)}">Move to sign-ups</button>
+                  <button class="btn btn-sm btn-danger" data-udel="${esc(s.id)}">Delete</button></td>
+              </tr>`).join('')}</tbody>
+          </table>
+        </div></div>`;
+    }
 
     $('#signups-search').addEventListener('input', draw);
     // spreadsheet apps run cells that start with = + - @ as formulas – prefix those with '
@@ -2166,6 +2192,29 @@
       setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     };
     view.addEventListener('click', async (e) => {
+      const ok = e.target.closest('[data-uok]');
+      if (ok) {
+        try {
+          const r = await api(`/signups/unverified/${encodeURIComponent(ok.dataset.uok)}/approve`, { method: 'POST' });
+          items = r.items; waiting = r.unverified; draw(); drawUnverified(); toast('Moved to sign-ups.');
+        } catch (ex) { toast(esc(ex.message), 'err'); }
+        return;
+      }
+      const ud = e.target.closest('[data-udel]');
+      if (ud) {
+        const s = waiting.find((x) => x.id === ud.dataset.udel);
+        if (!confirm(`Delete the unverified sign-up from "${s ? s.name : ''}"? This can't be undone.`)) return;
+        try { waiting = (await api(`/signups/unverified/${encodeURIComponent(ud.dataset.udel)}`, { method: 'DELETE' })).unverified; drawUnverified(); toast('Deleted.'); }
+        catch (ex) { toast(esc(ex.message), 'err'); }
+        return;
+      }
+      if (e.target.closest('#unverified-clear')) {
+        if (!confirm(`Delete all ${waiting.length} unverified sign-ups? This can't be undone.`)) return;
+        // only the ones on screen – a sign-up that arrived meanwhile stays until it has been seen
+        try { waiting = (await api('/signups/unverified', { method: 'DELETE', body: { ids: waiting.map((s) => s.id) } })).unverified; drawUnverified(); toast('Unverified sign-ups deleted.'); }
+        catch (ex) { toast(esc(ex.message), 'err'); }
+        return;
+      }
       const d = e.target.closest('[data-sdel]');
       if (!d) return;
       const s = items.find((x) => x.id === d.dataset.sdel);
@@ -2174,6 +2223,7 @@
       catch (ex) { toast(esc(ex.message), 'err'); }
     });
     draw();
+    drawUnverified();
   }
 
   /* =========================================================

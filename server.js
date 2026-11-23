@@ -24,6 +24,7 @@ const webpswap = require('./cms/webpswap');
 const cfpurge = require('./cms/cfpurge');
 const legacy = require('./cms/legacy');
 const signups = require('./cms/signups');
+const turnstile = require('./cms/turnstile');
 const images = require('./cms/images');
 
 auth.load(); // creates the first admin account if none exists
@@ -120,10 +121,21 @@ app.get('/api/me', (req, res) => {
 });
 
 /* ---------- agent sign-ups (public registration form on / and /register/) ---------- */
-app.post('/api/signup', publicJson, (req, res) => {
+// Sign-ups must come from our own pages. Browsers always tell which site a form was sent from
+// (Origin), so another website can't make its visitors' browsers sign up here. A script that
+// sends no Origin at all still has to pass the bot check (cms/turnstile.js).
+const SITE_HOST = new URL(cfg.SITE_URL).host;
+function fromOurSite(req) {
+  const origin = req.headers.origin;
+  if (origin === undefined) return true;
+  try { const host = new URL(origin).host; return host === SITE_HOST || host === req.headers.host; } catch { return false; } // also "null"
+}
+app.post('/api/signup', publicJson, async (req, res, next) => {
+  if (!fromOurSite(req)) return res.status(403).json({ error: 'Please use the registration form on our website.' });
   const b = req.body || {};
-  const r = signups.add(b.fields, { page: b.page, ip: clientIp(req) });
-  if (r.error) return res.status(r.limited ? 429 : 400).json({ error: r.error });
+  let r;
+  try { r = await signups.add(b.fields, { page: b.page, ip: clientIp(req), token: b.token }); } catch (e) { return next(e); }
+  if (r.error) return res.status(r.limited ? 429 : r.failed ? 403 : 400).json({ error: r.error });
   res.json({ ok: true, message: signups.THANKS });
 });
 
@@ -439,7 +451,14 @@ api.get('/media', (req, res) => {
 });
 
 /* ---------- sign-ups ---------- */
-api.get('/signups', (req, res) => res.json({ items: signups.list() }));
+api.get('/signups', (req, res) => res.json({ items: signups.list(), unverified: signups.listUnverified(), botCheck: !!turnstile.settings() }));
+// "Unverified" = sent without passing the bot check (see cms/signups.js); these routes come before /signups/:id
+api.delete('/signups/unverified', (req, res) => res.json({ unverified: signups.clearUnverified((req.body || {}).ids) }));
+api.delete('/signups/unverified/:id', (req, res) => res.json({ unverified: signups.removeUnverified(req.params.id) }));
+api.post('/signups/unverified/:id/approve', (req, res) => {
+  const r = signups.approve(req.params.id);
+  return r ? res.json(r) : res.status(404).json({ error: 'That sign-up is no longer in the Unverified list.' });
+});
 api.delete('/signups/:id', (req, res) => res.json({ items: signups.remove(req.params.id) }));
 
 /* ---------- account ---------- */
@@ -525,10 +544,13 @@ function notFound(req, res) {
 // old WordPress links: /?p=123, /?page_id=16, /?s=…
 app.use(legacy.wpQuery(notFound));
 // the registration form posted without JavaScript arrives at the page URL itself
-app.post('*', express.urlencoded({ extended: true, limit: '20kb' }), (req, res, next) => {
+// (no JavaScript means no bot check either, so with Turnstile on these land in Unverified)
+app.post('*', express.urlencoded({ extended: true, limit: '20kb' }), async (req, res, next) => {
   const fields = req.body && req.body.form_fields;
   if (!fields || typeof fields !== 'object') return next();
-  const r = signups.add(fields, { page: req.path, ip: clientIp(req) });
+  if (!fromOurSite(req)) return res.status(403).type('text').send('Please use the registration form on our website.');
+  let r;
+  try { r = await signups.add(fields, { page: req.path, ip: clientIp(req), token: req.body['cf-turnstile-response'] }); } catch (e) { return next(e); }
   res.redirect(303, `/${req.path.replace(/^\/+/, '')}?registered=${r.error ? 0 : 1}`);
 });
 app.get(['/feed', '/feed/'], (req, res, next) => {
@@ -588,5 +610,6 @@ try { seo.applyGlobalToStatic(); } catch (e) { console.warn('SEO head injection 
 try { social.applyAll(); } catch (e) { console.warn('Social bar injection skipped:', e.message); }
 try { cleanhash.applyAll(); } catch (e) { console.warn('Clean-hash injection skipped:', e.message); }
 try { signups.applyAll(); } catch (e) { console.warn('Sign-up form script skipped:', e.message); }
+console.log(turnstile.describe());
 try { webpswap.applyAll(); } catch (e) { console.warn('Image -> WebP swap skipped:', e.message); }
 cfpurge.schedule('server start'); // a deploy restarts the server, so this clears Cloudflare's old copies
