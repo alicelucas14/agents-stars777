@@ -43,7 +43,8 @@ const wpQuery = (notFound) => (req, res, next) => {
   const q = req.query;
   const id = first(q.p ?? q.page_id ?? q.attachment_id);
   if (id !== undefined) {
-    const to = /^\d+$/.test(String(id)) && urlForId(+id);
+    // "?p[x]=1" arrives as an object, not text – String() of that can throw, so test the type first
+    const to = typeof id === 'string' && /^\d+$/.test(id) && urlForId(+id);
     return to ? res.redirect(301, to) : notFound(req, res);
   }
   if (q.s !== undefined) {

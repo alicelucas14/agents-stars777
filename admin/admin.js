@@ -26,9 +26,9 @@
     `<button type="button" class="score-badge ${scoreClass(n)}" data-seo-diag="${id}" data-seo-kind="${kind}" title="${esc(title)}">${n == null ? '–' : `${n}<small>/100</small>`}</button>`;
 
   const applyTpl = (tpl, seoS, vars = {}) => String(tpl || '')
-    .replace(/%sep%/g, (seoS && seoS.separator) || '-').replace(/%sitename%/g, state.siteName)
-    .replace(/%title%/g, vars.title || '').replace(/%term%/g, vars.term || '')
-    .replace(/%page%/g, vars.page || '').replace(/%pages%/g, vars.pages || '')
+    .replace(/%sep%/g, () => (seoS && seoS.separator) || '-').replace(/%sitename%/g, () => state.siteName)
+    .replace(/%title%/g, () => vars.title || '').replace(/%term%/g, () => vars.term || '')
+    .replace(/%page%/g, () => vars.page || '').replace(/%pages%/g, () => vars.pages || '')
     .replace(/\s+/g, ' ').trim();
 
   const STOP_WORDS = new Set([
@@ -531,7 +531,7 @@
         <div class="pager" id="posts-pager"></div>
       </div>`;
 
-    const name = (type, s) => (terms[type] && terms[type][s]) || s;
+    const name = (type, s) => (terms[type] && Object.hasOwn(terms[type], s) && terms[type][s]) || s;
 
     function draw() {
       const counts = { all: posts.length, publish: posts.filter((p) => p.status === 'publish').length, draft: posts.filter((p) => p.status === 'draft').length };

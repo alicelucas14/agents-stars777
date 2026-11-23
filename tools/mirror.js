@@ -275,7 +275,8 @@ async function run() {
     assetCount: assets.size,
     failures,
   };
-  fs.writeFileSync(path.join(OUT, '_mirror-report.json'), JSON.stringify(report, null, 2));
+  // kept next to the project, not inside the published site/ folder (it lists every page and failure)
+  fs.writeFileSync(path.join(__dirname, '..', 'mirror-report.json'), JSON.stringify(report, null, 2));
   console.log(`\nDone: ${pages.size} pages, ${assets.size} assets, ${failures.length} failures`);
   if (failures.length) console.log(failures.slice(0, 30).join('\n'));
 }

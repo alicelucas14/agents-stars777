@@ -111,7 +111,7 @@ function ensureTerm(type, nameOrSlug) {
   const terms = getTerms();
   const map = terms[type];
   const slug = slugify(nameOrSlug);
-  if (!map[slug]) {
+  if (!Object.hasOwn(map, slug)) { // not map[slug]: a tag named "constructor" would find Object's own property
     // if the value given is already a known slug keep it, otherwise register the new name
     map[slug] = String(nameOrSlug).trim();
     saveTerms(terms);

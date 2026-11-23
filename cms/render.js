@@ -9,6 +9,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const cheerio = require('cheerio');
 const cfg = require('./config');
 const store = require('./store');
@@ -53,7 +54,7 @@ function excerptOf(post, words = 55) {
   return excerptCache.get(key);
 }
 
-const termName = (terms, type, slug) => (terms[type] && terms[type][slug]) || String(slug).replace(/-/g, ' ');
+const termName = (terms, type, slug) => (terms[type] && Object.hasOwn(terms[type], slug) && terms[type][slug]) || String(slug).replace(/-/g, ' ');
 
 function firstImage(html) {
   const m = /<img[^>]+src=["']([^"']+)["']/i.exec(html || '');
@@ -69,7 +70,8 @@ function firstImage(html) {
 const faqCache = new Map();
 function faqFrom(html) {
   if (!html || !/faq|frequently asked/i.test(html)) return [];
-  const key = html.length + ':' + html.slice(0, 64);
+  // the whole text decides the key: a same-length typo fix in an answer must not reuse the old FAQ
+  const key = crypto.createHash('sha1').update(html).digest('base64');
   if (faqCache.has(key)) return faqCache.get(key);
   const $ = cheerio.load(html);
   const head = $('h2,h3,h4').filter((_, el) => /\bfaqs?\b|frequently asked/i.test($(el).text())).first();

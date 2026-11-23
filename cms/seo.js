@@ -51,13 +51,14 @@ function save(s) { store.writeJson(SEO_FILE, s); rebuildRedirectMap(); return s;
 /* ---------- titles ---------- */
 function titleFrom(tpl, vars) {
   const s = get();
+  // functions, not strings, as replacements: a "$" in a title ("Win $$ fast") must stay as typed
   return String(tpl || '')
-    .replace(/%sep%/g, s.separator)
-    .replace(/%sitename%/g, cfg.SITE_NAME)
-    .replace(/%title%/g, vars.title || '')
-    .replace(/%term%/g, vars.term || '')
-    .replace(/%page%/g, vars.page || '')
-    .replace(/%pages%/g, vars.pages || '')
+    .replace(/%sep%/g, () => s.separator)
+    .replace(/%sitename%/g, () => cfg.SITE_NAME)
+    .replace(/%title%/g, () => vars.title || '')
+    .replace(/%term%/g, () => vars.term || '')
+    .replace(/%page%/g, () => vars.page || '')
+    .replace(/%pages%/g, () => vars.pages || '')
     .replace(/\s+/g, ' ').trim();
 }
 

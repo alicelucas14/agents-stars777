@@ -18,8 +18,21 @@ const scryptAsync = promisify(crypto.scrypt);
 // same result as hash(), but computed off the main thread so a login doesn't pause the whole site
 const hashAsync = async (pw, salt) => (await scryptAsync(String(pw), salt, 64)).toString('hex');
 
+/**
+ * content/admin.json, or null when it doesn't exist yet. Only a missing file means "first run":
+ * a file that is there but can't be read must never be replaced by a fresh one – that would
+ * delete every account – so that is an error instead.
+ */
+function readAuth() {
+  const a = store.readJson(cfg.AUTH_FILE, null);
+  if (!a && fs.existsSync(cfg.AUTH_FILE)) {
+    throw new Error(`${cfg.AUTH_FILE} exists but could not be read – restore it from a backup (refusing to create a new admin account)`);
+  }
+  return a;
+}
+
 function load() {
-  let a = store.readJson(cfg.AUTH_FILE, null);
+  let a = readAuth();
   if (!a) {
     const password = crypto.randomBytes(9).toString('base64url');
     a = { secret: crypto.randomBytes(32).toString('hex'), users: [] };
@@ -38,7 +51,7 @@ function load() {
 }
 
 function setPassword(username, password) {
-  const a = store.readJson(cfg.AUTH_FILE, null) || { secret: crypto.randomBytes(32).toString('hex'), users: [] };
+  const a = readAuth() || { secret: crypto.randomBytes(32).toString('hex'), users: [] };
   const salt = crypto.randomBytes(16).toString('hex');
   // sessions issued before this moment stop working (see userFrom)
   const pwChanged = Math.floor(Date.now() / 1000);
@@ -76,11 +89,8 @@ function issue(res, username, secure) {
     `${COOKIE}=${data}.${sign(data)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${MAX_AGE}${secure ? '; Secure' : ''}`);
 }
 
-function clear(res) {
-  res.setHeader('Set-Cookie', `${COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0`);
-}
-
-function userFrom(req) {
+/** The request's session cookie if it is genuine and not expired: { u, exp, sig }, else null. */
+function tokenFrom(req) {
   const m = (req.headers.cookie || '').match(new RegExp(`(?:^|;\\s*)${COOKIE}=([^;]+)`));
   if (!m) return null;
   const [u, exp, sig] = m[1].split('.');
@@ -88,11 +98,36 @@ function userFrom(req) {
   const expected = sign(`${u}.${exp}`);
   if (sig.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
   if (+exp < Date.now() / 1000) return null;
-  const username = Buffer.from(u, 'base64url').toString();
-  const user = load().users.find((x) => x.username === username);
+  return { u, exp: +exp, sig };
+}
+
+/**
+ * Log out: delete the cookie in this browser AND remember on the server that this session is
+ * over, so a copy of the cookie (another device, a stolen copy) stops working too. Other
+ * sessions of the same user stay logged in. Remembered until the session would have expired.
+ */
+function clear(res, req) {
+  const t = req && tokenFrom(req);
+  if (t) {
+    const a = load();
+    const now = Date.now() / 1000;
+    a.revoked = (a.revoked || []).filter((r) => r.exp > now).slice(-999);
+    if (!a.revoked.some((r) => r.sig === t.sig)) a.revoked.push({ sig: t.sig, exp: t.exp });
+    store.writeJson(cfg.AUTH_FILE, a);
+  }
+  res.setHeader('Set-Cookie', `${COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0`);
+}
+
+function userFrom(req) {
+  const t = tokenFrom(req);
+  if (!t) return null;
+  const a = load();
+  if ((a.revoked || []).some((r) => r.sig === t.sig)) return null; // logged out
+  const username = Buffer.from(t.u, 'base64url').toString();
+  const user = a.users.find((x) => x.username === username);
   if (!user) return null;
   // a password change logs out sessions issued before it (issued = expiry - MAX_AGE)
-  if (user.pwChanged && +exp - MAX_AGE < user.pwChanged) return null;
+  if (user.pwChanged && t.exp - MAX_AGE < user.pwChanged) return null;
   return username;
 }
 

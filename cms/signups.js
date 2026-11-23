@@ -32,7 +32,8 @@ function remove(id) {
   return items;
 }
 
-const clip = (v, max) => String(v ?? '').replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '').trim().slice(0, max);
+// only plain text counts: form fields like "name[toString]=1" arrive as objects, and String() of those can throw
+const clip = (v, max) => (typeof v === 'string' || typeof v === 'number' ? String(v) : '').replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '').trim().slice(0, max);
 
 /** Validate the posted form fields. Returns { entry } or { error }; { spam: true } for honeypot hits. */
 function clean(fields = {}) {

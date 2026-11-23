@@ -7,6 +7,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const http = require('http');
 const crypto = require('crypto');
 const express = require('express');
 const compression = require('compression');
@@ -63,6 +64,15 @@ app.use((req, res, next) => {
   next();
 });
 
+/* ---------- /admin and /api exist in lower case only ----------
+ * Express matches paths without regard to case, so "/ADMIN/" or "/Api/…" would reach them while
+ * slipping past anything written for the exact path (the no-store rule above, Cloudflare and nginx
+ * rules for /admin and /api). */
+app.use((req, res, next) => {
+  if (/^\/(?:admin|api)(?:\/|$)/i.test(req.path) && !/^\/(?:admin|api)(?:\/|$)/.test(req.path)) return notFound(req, res);
+  next();
+});
+
 // JSON bodies: the public login + sign-up forms get a small limit; the 10 MB limit (long posts)
 // only applies on the admin API, after the login check – so anonymous visitors can't send
 // huge bodies for the server to parse.
@@ -87,10 +97,13 @@ app.post('/api/login', publicJson, async (req, res, next) => {
   const ip = clientIp(req);
   if (auth.rateLimited(ip)) return res.status(429).json({ error: 'Too many attempts. Try again in 15 minutes.' });
   if (loginsInFlight >= MAX_LOGINS_IN_FLIGHT) return res.status(429).json({ error: 'Too many login attempts right now. Try again in a moment.' });
-  const { username, password } = req.body || {};
+  const b = req.body || {};
+  // text only: a number or object here used to pass the password check and then crash the server
+  const username = typeof b.username === 'string' ? b.username : '';
+  const password = typeof b.password === 'string' ? b.password : '';
   loginsInFlight++;
   let ok;
-  try { ok = await auth.verifyAsync(String(username || ''), String(password || '')); }
+  try { ok = await auth.verifyAsync(username, password); }
   catch (e) { return next(e); }
   finally { loginsInFlight--; }
   if (!ok) {
@@ -100,7 +113,7 @@ app.post('/api/login', publicJson, async (req, res, next) => {
   auth.issue(res, username, req.secure);
   res.json({ user: username });
 });
-app.post('/api/logout', (req, res) => { auth.clear(res); res.json({ ok: true }); });
+app.post('/api/logout', (req, res) => { auth.clear(res, req); res.json({ ok: true }); });
 app.get('/api/me', (req, res) => {
   const user = auth.userFrom(req);
   return user ? res.json({ user, siteUrl: cfg.SITE_URL, siteName: cfg.SITE_NAME }) : res.status(401).json({ error: 'Not logged in' });
@@ -472,7 +485,15 @@ api.delete('/users/:username', (req, res) => {
 });
 
 app.use('/api', api);
-app.use('/api', (err, req, res, next) => { console.error(err); res.status(500).json({ error: err.message || 'Server error' }); });
+// a bad request (too big, broken JSON) keeps its own 4xx status; for real failures only a logged-in
+// admin sees the reason – the public login and sign-up forms just get "Server error"
+app.use('/api', (err, req, res, next) => {
+  const status = err.status >= 400 && err.status < 500 ? err.status : 500;
+  if (status === 500) console.error(err);
+  if (res.headersSent) return next(err);
+  const reason = status === 500 ? (req.user && err.message) || 'Server error' : (err.expose && err.message) || http.STATUS_CODES[status];
+  res.status(status).json({ error: reason });
+});
 
 /* ---------- admin UI ---------- */
 app.use('/admin/tinymce', express.static(path.join(__dirname, 'node_modules', 'tinymce'), { maxAge: '7d' }));
@@ -525,14 +546,15 @@ app.use(express.static(cfg.SITE_DIR, {
   setHeaders: (res, filePath) => {
     // an SVG opened directly could run script on our domain – render it as a plain image only
     if (/\.svg$/i.test(filePath)) res.setHeader('Content-Security-Policy', "default-src 'none'; img-src data: 'self'; style-src 'unsafe-inline'; sandbox");
-    // pages: browsers re-check every time (max-age=0); Cloudflare may keep a page for an hour and is
-    // told to drop it right after every publish (cms/cfpurge.js). The hour is in a header only Cloudflare
-    // reads: an s-maxage in Cache-Control would also make the server's own nginx cache keep pages for an
-    // hour, and nothing clears that cache. Only pages carry it, so nothing else (API, admin, redirects,
-    // errors, sitemap, robots) can ever be cached by Cloudflare's rule.
+    // pages: browsers re-check every time (max-age=0); Cloudflare may keep a page for a day and is
+    // told to drop it right after every publish, settings save and server start (cms/cfpurge.js) – so
+    // the day only matters for pages nobody changed, and quiet pages stay fast for the next visitor.
+    // The day is in a header only Cloudflare reads: an s-maxage in Cache-Control would also make the
+    // server's own nginx cache keep pages, and nothing clears that cache. Only pages carry it, so
+    // nothing else (API, admin, redirects, errors, sitemap, robots) can ever be cached by Cloudflare's rule.
     if (/\.html$/i.test(filePath)) {
       res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
-      res.setHeader('Cloudflare-CDN-Cache-Control', 'max-age=3600');
+      res.setHeader('Cloudflare-CDN-Cache-Control', 'max-age=86400');
     }
     else if (/\.(xml|txt)$/i.test(filePath)) res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
     // Elementor's generated CSS/JS keeps the same file name when its content changes: 1 day, not 30
@@ -544,6 +566,15 @@ app.use(express.static(cfg.SITE_DIR, {
 // old WordPress URL variants (feeds, /amp/, pasted quotes, capitals) -> 301 to the live page
 app.use(legacy.oldPaths);
 app.use(notFound);
+
+// Everything else that fails (a malformed address, an oversized form post): a short plain answer.
+// Express's own error page would show the stack trace – file paths and code – to anyone.
+app.use((err, req, res, next) => {
+  const status = err.status >= 400 && err.status < 500 ? err.status : 500;
+  if (status === 500) console.error(err);
+  if (res.headersSent) return next(err);
+  res.status(status).type('text').send(http.STATUS_CODES[status] || 'Error');
+});
 
 app.listen(cfg.PORT, () => {
   console.log(`Site:  http://localhost:${cfg.PORT}/`);
