@@ -12,3 +12,4 @@ content/turnstile.json
 content/signups-archive.jsonl
 content/hosts.json
 content/linkcheck.json
+content/linkcheck-reviewed.json

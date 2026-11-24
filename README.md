@@ -126,7 +126,11 @@ Admin → **Link checker** reads every page in `sitemap.xml` and checks each lin
 fetched gently (HEAD, GET as fallback, up to 5 redirects, one request at a time per site). Results show
 what is broken, unreachable, redirected or can't be verified (sites that refuse bots), with every page
 the address appears on and an *Edit* link for posts and pages. Only the last result is kept
-(`content/linkcheck.json`, not committed). Because it makes the server fetch addresses, it only contacts
+(`content/linkcheck.json`, not committed). Redirects and "can't verify" addresses that you have looked at and
+accept (a download link that redirects on purpose, Instagram refusing bots) can be hidden with *Mark as OK*
+(or *Mark all as OK*); they move to a **Reviewed** tab (`content/linkcheck-reviewed.json`, not committed) and come
+back by themselves if the address starts answering differently – a redirect that now leads elsewhere, or an
+error. Broken and unreachable addresses can't be hidden. Because it makes the server fetch addresses, it only contacts
 public internet addresses – anything that resolves to a private, loopback, link-local or metadata address
 is reported as "points to a private network" and never requested.
 

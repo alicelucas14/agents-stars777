@@ -25,6 +25,9 @@ const cfg = require('./config');
 const store = require('./store');
 
 const RESULT_FILE = path.join(cfg.CONTENT_DIR, 'linkcheck.json');
+const REVIEWED_FILE = path.join(cfg.CONTENT_DIR, 'linkcheck-reviewed.json');
+const MAX_REVIEWED = 2000;
+const REVIEWABLE = new Set(['redirect', 'blocked']); // broken / unreachable always need a look, so they can't be hidden
 const UA = 'BigAgentsLinkChecker/1.0';
 const MAX_URLS = 6000;       // safety valve
 const MAX_PAGES_PER_URL = 8; // "found on" pages kept per address
@@ -254,9 +257,58 @@ const stop = () => {
   return true;
 };
 
+/* ---------- "reviewed": redirects / can't-verify addresses the owner opened and accepts ---------- */
+// Sites like Instagram or Merriam-Webster refuse automatic checks forever, and some redirects are deliberate, so these two lists
+// would never reach zero. A reviewed address is hidden only while it keeps giving the same kind of answer: a redirect that now
+// goes somewhere else, or a page that starts to answer with an error, is a different key and shows up again.
+// Entries for addresses that are no longer linked from any page are dropped after a complete run.
+let reviewed = null; // key -> { url, result, finalUrl, at, by }
+const keyOf = (i) => `${i.result}|${i.url}|${i.result === 'redirect' ? i.finalUrl || '' : ''}`;
+function loadReviewed() {
+  if (reviewed) return reviewed;
+  reviewed = new Map();
+  try {
+    const j = JSON.parse(fs.readFileSync(REVIEWED_FILE, 'utf8'));
+    for (const [k, v] of Object.entries((j && j.items) || {})) if (v && typeof v.url === 'string' && REVIEWABLE.has(v.result)) reviewed.set(k, v);
+  } catch { /* none yet */ }
+  return reviewed;
+}
+function saveReviewed() {
+  try { store.writeJson(REVIEWED_FILE, { items: Object.fromEntries(reviewed) }); } catch (e) { console.error('Could not save the reviewed link list:', e.message); }
+}
+/** Mark (on = true) or un-mark (on = false) addresses from the last result, by the `key` that status() gives each item. Returns how many changed. */
+function review(keys, on, who) {
+  const map = loadReviewed();
+  const byKey = new Map((((state.last && state.last.items) || [])).map((i) => [keyOf(i), i]));
+  let changed = 0;
+  for (const k of Array.isArray(keys) ? keys.slice(0, MAX_REVIEWED) : []) {
+    if (typeof k !== 'string') continue;
+    if (on) {
+      const i = byKey.get(k);
+      if (!i || !REVIEWABLE.has(i.result) || map.has(k)) continue;
+      if (map.size >= MAX_REVIEWED) break;
+      map.set(k, { url: i.url, result: i.result, finalUrl: i.result === 'redirect' ? i.finalUrl || '' : '', at: new Date().toISOString(), by: String(who || '') });
+      changed++;
+    } else if (map.delete(k)) changed++;
+  }
+  if (changed) saveReviewed();
+  return changed;
+}
+function pruneReviewed(stillLinked) {
+  const map = loadReviewed();
+  let n = 0;
+  for (const [k, v] of map) if (!stillLinked.has(v.url)) { map.delete(k); n++; }
+  if (n) saveReviewed();
+}
+
 function status() {
   const { running, phase, progress, startedAt, error } = state;
-  return { running, phase, progress, startedAt: startedAt || null, error: error || null, last: state.last };
+  let last = state.last;
+  if (last) {
+    const map = loadReviewed();
+    last = { ...last, items: (last.items || []).map((i) => { const key = keyOf(i); return { ...i, key, reviewed: map.has(key) }; }) };
+  }
+  return { running, phase, progress, startedAt: startedAt || null, error: error || null, last };
 }
 
 async function run(o) {
@@ -330,9 +382,12 @@ async function run(o) {
     stats: { ok: count('ok'), broken: count('broken'), redirect: count('redirect'), blocked: count('blocked'), unreachable: count('unreachable') },
     items: problems,
   };
-  if (!state.cancel) try { store.writeJson(RESULT_FILE, last); } catch (e) { console.error('Could not save the link check result:', e.message); }
+  if (!state.cancel) {
+    try { store.writeJson(RESULT_FILE, last); } catch (e) { console.error('Could not save the link check result:', e.message); }
+    pruneReviewed(new Set(found.keys()));
+  }
   state = { running: false, phase: state.cancel ? 'stopped' : 'done', progress: state.progress, cancel: false, startedAt: state.startedAt, last };
 }
 const order = (r) => ({ broken: 0, unreachable: 1, redirect: 2, blocked: 3 }[r] ?? 4);
 
-module.exports = { start, stop, status, isPublicAddress, extract, sitemapPaths, probe, probeLocal, judge, guardedLookup };
+module.exports = { start, stop, status, review, isPublicAddress, extract, sitemapPaths, probe, probeLocal, judge, guardedLookup };

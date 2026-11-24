@@ -533,6 +533,12 @@ api.post('/linkcheck', (req, res) => {
   res.json(linkcheck.status());
 });
 api.post('/linkcheck/stop', (req, res) => res.json({ stopped: linkcheck.stop(), ...linkcheck.status() }));
+// body { keys: [item.key…], reviewed: true|false } – hide / show again redirects and can't-verify addresses the owner has looked at
+api.post('/linkcheck/review', (req, res) => {
+  const body = req.body || {};
+  const changed = linkcheck.review(body.keys, body.reviewed !== false, req.user);
+  res.json({ changed, ...linkcheck.status() });
+});
 
 // Sign-ups are people's names, emails and phone numbers: super admin only (the whole /signups tree).
 api.use('/signups', auth.requireSuper);

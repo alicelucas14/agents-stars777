@@ -2400,24 +2400,30 @@
       <p class="hint" style="margin:-8px 0 16px">Reads every page in your sitemap and checks each link and picture once. Addresses on this site are asked of the site itself; other sites are visited gently, one at a time. It takes a few minutes – you can leave this screen and come back.</p>
       <div class="card" id="lc-status-card"><div class="card-body" id="lc-status"></div></div>
       <div class="card" style="margin-top:16px" id="lc-results-card">
-        <div class="toolbar"><div class="tabs" id="lc-tabs"></div></div>
+        <div class="toolbar"><div class="tabs" id="lc-tabs"></div><button class="btn btn-sm" id="lc-bulk" style="margin-left:auto" hidden></button></div>
         <p class="hint" id="lc-help" style="margin:4px 20px 12px"></p>
-        <div style="overflow-x:auto"><table class="posts"><thead><tr><th>Address</th><th>Problem</th><th>Found on</th></tr></thead><tbody id="lc-body"></tbody></table></div>
+        <div style="overflow-x:auto"><table class="posts"><thead><tr><th>Address</th><th>Problem</th><th>Found on</th><th></th></tr></thead><tbody id="lc-body"></tbody></table></div>
       </div>`;
 
-    const LABEL = { broken: 'Broken', unreachable: 'Unreachable', redirect: 'Redirects', blocked: "Can't verify" };
+    const LABEL = { broken: 'Broken', unreachable: 'Unreachable', redirect: 'Redirects', blocked: "Can't verify", reviewed: 'Reviewed' };
     const HELP = {
       broken: 'These need fixing: the page or picture is gone, the domain does not exist, or the site is broken.',
       unreachable: 'No answer in time. Often temporary – run the check again before changing anything.',
-      redirect: 'Still work, but the address has moved. Linking to the new address is faster and safer for SEO.',
-      blocked: 'These sites refuse automatic checks (common for Facebook, Instagram, WhatsApp, Telegram, Cloudflare-protected sites). Open them yourself to be sure.',
+      redirect: 'Still work, but the address has moved. Linking to the new address is faster and safer for SEO. If a redirect is deliberate (a download link, for example), press "Mark as OK" to hide it.',
+      blocked: 'These sites refuse automatic checks (common for Facebook, Instagram, WhatsApp, Telegram, Cloudflare-protected sites). Open one yourself; if it loads, press "Mark as OK" to hide it.',
+      reviewed: 'You looked at these and they are fine. One comes back by itself if its address starts answering differently (an error, or a redirect somewhere else). "Show again" puts one back.',
     };
+    const REVIEWABLE = ['redirect', 'blocked'];
+    let shown = []; // the rows on screen, for "Mark all"
     const when = (d) => `${fmtDate(d)} ${fmtTime(d)}`;
     const tail = (u) => (u.length > 70 ? `${u.slice(0, 48)}…${u.slice(-18)}` : u);
 
     function draw() {
       const last = s.last;
       const el = $('#lc-status');
+      const items = (last && last.items) || [];
+      const open = items.filter((i) => !i.reviewed);
+      const count = (k) => (k === 'reviewed' ? items.filter((i) => i.reviewed).length : open.filter((i) => i.result === k).length);
       $('#lc-run').hidden = s.running; $('#lc-stop').hidden = !s.running;
       if (s.running) {
         const { done, total } = s.progress || { done: 0, total: 0 };
@@ -2429,21 +2435,24 @@
       } else {
         const t = last.stats;
         el.innerHTML = `<strong>${last.cancelled ? 'Stopped early – ' : ''}Last check: ${when(last.finishedAt)}</strong>
-          <div class="muted" style="margin-top:4px">${last.pagesRead} pages read · ${last.checked} addresses checked · <b style="color:${t.broken ? 'var(--danger)' : 'inherit'}">${t.broken} broken</b> · ${t.unreachable} unreachable · ${t.redirect} redirects · ${t.blocked} can't verify · ${t.ok} fine</div>
+          <div class="muted" style="margin-top:4px">${last.pagesRead} pages read · ${last.checked} addresses checked · <b style="color:${t.broken ? 'var(--danger)' : 'inherit'}">${t.broken} broken</b> · ${t.unreachable} unreachable · ${count('redirect')} redirects · ${count('blocked')} can't verify · ${t.ok} fine${count('reviewed') ? ` · ${count('reviewed')} reviewed` : ''}</div>
           ${s.error ? `<div class="notice" style="margin-top:8px">${esc(s.error)}</div>` : ''}`;
       }
-      const items = (last && last.items) || [];
-      const count = (k) => items.filter((i) => i.result === k).length;
       $('#lc-tabs').innerHTML = Object.keys(LABEL).map((k) => `<button class="tab ${filter === k ? 'active' : ''}" data-lcf="${k}" id="lc-tab-${k}">${LABEL[k]} <span class="count">${count(k)}</span></button>`).join('');
-      const rows = items.filter((i) => i.result === filter);
+      const rows = filter === 'reviewed' ? items.filter((i) => i.reviewed) : open.filter((i) => i.result === filter);
+      shown = rows;
+      const bulk = $('#lc-bulk');
+      bulk.hidden = !((REVIEWABLE.includes(filter) || filter === 'reviewed') && rows.length > 1);
+      bulk.textContent = filter === 'reviewed' ? `Show all ${rows.length} again` : `Mark all ${rows.length} as OK`;
       $('#lc-body').innerHTML = rows.length ? rows.map((i) => `
         <tr>
           <td style="max-width:420px;word-break:break-all"><a href="${esc(i.url)}" target="_blank" rel="noopener noreferrer" title="${esc(i.url)}">${esc(tail(i.url))}</a>
             <div class="muted" style="font-size:12px">${i.kind === 'image' ? 'Picture' : 'Link'}${i.internal ? ' · on this site' : ' · other site'}</div></td>
-          <td>${i.code ? `<span class="pill">${i.code}</span> ` : ''}${esc(i.message || '')}${i.finalUrl && i.result === 'redirect' ? `<div class="muted" style="font-size:12px;word-break:break-all">→ <a href="${esc(i.finalUrl)}" target="_blank" rel="noopener noreferrer">${esc(tail(i.finalUrl))}</a></div>` : ''}</td>
+          <td>${filter === 'reviewed' ? `<span class="muted" style="font-size:12px">${i.result === 'redirect' ? 'Redirect' : "Can't verify"} · </span>` : ''}${i.code ? `<span class="pill">${i.code}</span> ` : ''}${esc(i.message || '')}${i.finalUrl && i.result === 'redirect' ? `<div class="muted" style="font-size:12px;word-break:break-all">→ <a href="${esc(i.finalUrl)}" target="_blank" rel="noopener noreferrer">${esc(tail(i.finalUrl))}</a></div>` : ''}</td>
           <td>${i.pages.slice(0, 3).map((p) => `<div><a href="${esc(p)}" target="_blank" rel="noopener">${esc(p)}</a>${editFor[p] ? ` · <a href="${editFor[p]}">Edit</a>` : ''}</div>`).join('')}${i.count > 3 ? `<div class="muted" style="font-size:12px">+ ${i.count - 3} more place${i.count - 3 === 1 ? '' : 's'}</div>` : ''}</td>
+          <td style="white-space:nowrap">${REVIEWABLE.includes(i.result) ? `<button class="btn btn-sm" data-lcr="${esc(i.key)}" data-on="${i.reviewed ? '0' : '1'}">${i.reviewed ? 'Show again' : 'Mark as OK'}</button>` : ''}</td>
         </tr>`).join('')
-        : `<tr><td colspan="3"><div class="empty" style="padding:26px">${last ? (items.length ? `Nothing in this list. ${HELP[filter]}` : 'No problems found 🎉') : 'Run a check to see results here.'}</div></td></tr>`;
+        : `<tr><td colspan="4"><div class="empty" style="padding:26px">${last ? (items.length ? `Nothing in this list. ${HELP[filter]}` : 'No problems found 🎉') : 'Run a check to see results here.'}</div></td></tr>`;
       const help = $('#lc-help'); if (help) help.textContent = HELP[filter];
     }
 
@@ -2459,6 +2468,17 @@
     view.addEventListener('click', async (e) => {
       const f = e.target.closest('[data-lcf]');
       if (f) { filter = f.dataset.lcf; draw(); return; }
+      const mark = e.target.closest('[data-lcr]'), bulk = e.target.closest('#lc-bulk');
+      if (mark || bulk) {
+        const on = mark ? mark.dataset.on === '1' : filter !== 'reviewed';
+        const keys = mark ? [mark.dataset.lcr] : shown.map((i) => i.key);
+        try {
+          const r = await api('/linkcheck/review', { method: 'POST', body: { keys, reviewed: on } });
+          s = r; draw();
+          toast(on ? `Hidden: ${r.changed} marked as OK. They are listed under Reviewed.` : `${r.changed} put back in the list.`);
+        } catch (ex) { toast(esc(ex.message), 'err'); }
+        return;
+      }
       if (e.target.closest('#lc-run')) {
         try { s = await api('/linkcheck', { method: 'POST' }); draw(); poll(); } catch (ex) { toast(esc(ex.message), 'err'); }
       } else if (e.target.closest('#lc-stop')) {
