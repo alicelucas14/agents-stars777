@@ -102,9 +102,13 @@ archives (with pagination), "similar posts", previous/next links, `sitemap.xml`,
   no keyboard/number runs, not containing the username. Applies to new accounts, resets and
   password changes (`cms/auth.js` `passwordProblem`). An account whose password doesn't meet the rules
   is asked to choose a new one at its next login – nothing else in the panel works until it does.
-- **Roles:** `super` and `staff`. Only a super admin sees the Users screen (accounts, each person's
-  last login, add / remove / reset passwords / change roles) – staff can't, and the server refuses the
-  `/api/users` calls too. Accounts made before roles existed are all staff, except the oldest one,
+- **Roles:** `super` and `staff`. Only a super admin sees the **Users** screen (accounts, each person's
+  last login, add / remove / reset passwords / change roles), the **SEO** settings (including the
+  site-wide custom `<head>` code, robots.txt, redirects, Search Console / Analytics codes) and the
+  **Sign-ups** list (names, emails, phone numbers) – staff can't open them, and the server refuses the
+  matching `/api/users`, `/api/seo` (and `PUT /api/seo/pages`, `PUT /api/terms/:type/:slug`) and
+  `/api/signups` calls too. Staff write posts and pages, manage the menu, social bar and media; the post
+  editor gets only the few title/schema values it needs from `GET /api/seo/editor`. Accounts made before roles existed are all staff, except the oldest one,
   which becomes the super admin automatically on first start (the log says which). Change roles in the
   Users screen, or on the server: `node tools/set-role.js <username> <super|staff>`. There is always
   at least one super admin, and nobody can change their own role.

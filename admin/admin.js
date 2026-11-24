@@ -10,6 +10,8 @@
   const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   let view = $('#view');
   const state = { me: null, isSuper: false, mustChange: false, minPassword: 12, siteUrl: '', siteName: '', dirty: false, lastHash: '', skipGuard: false };
+  // screens only a super admin may open (the server refuses the matching API calls for everyone else)
+  const SUPER_ONLY = ['users', 'seo', 'signups'];
 
   const slugify = (t) => String(t || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
     .replace(/&[a-z]+;/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 90);
@@ -303,7 +305,7 @@
       const me = await api('/me');
       Object.assign(state, { me: me.user, isSuper: !!me.isSuper, mustChange: !!me.mustChangePassword, minPassword: me.minPassword || 12, siteUrl: me.siteUrl, siteName: me.siteName });
       $('#current-user').textContent = `(${me.user})`;
-      $('#nav-users').hidden = !state.isSuper; // the Users screen is for the super admin only
+      for (const n of SUPER_ONLY) { const a = $(`#nav-${n}`); if (a) a.hidden = !state.isSuper; } // these screens are for the super admin only
       $('#login-view').hidden = true;
       $('#app').hidden = false;
       if (state.mustChange) { if (location.hash === '#/settings') route(); else location.hash = '#/settings'; }
@@ -331,7 +333,7 @@
     state.lastHash = location.hash;
     const [, name, arg] = location.hash.match(/^#\/([^/]*)\/?(.*)$/) || [];
     if (state.mustChange && name !== 'settings') return go('#/settings');                   // password must be replaced first
-    if (name === 'users' && !state.isSuper) return go('#/dashboard');                       // super admin only
+    if (SUPER_ONLY.includes(name) && !state.isSuper) { toast('That screen is for the super admin only.', 'err'); return go('#/dashboard'); }
     const navName = { edit: 'posts', 'edit-page': 'pages', 'new-page': 'pages' }[name] || name;
     $$('.side-nav a').forEach((a) => a.classList.toggle('active', a.dataset.nav === navName));
     destroyEditor();
@@ -366,9 +368,9 @@
      ========================================================= */
   async function renderDashboard() {
     const [posts, pages, seoData, statics, media, usersData, signupData] = await Promise.all([
-      api('/posts'), api('/pages'), api('/seo'),
+      api('/posts'), api('/pages'), state.isSuper ? api('/seo') : api('/seo/editor'),
       api('/seo/pages').catch(() => []), api('/media').catch(() => []), state.isSuper ? api('/users').catch(() => ({ users: [] })) : Promise.resolve({ users: [] }),
-      api('/signups').catch(() => ({ items: [] })),
+      state.isSuper ? api('/signups').catch(() => ({ items: [] })) : Promise.resolve({ items: [] }),
     ]);
     const signupsWeek = signupData.items.filter((x) => Date.now() - new Date(x.date) < 7 * 864e5).length;
     const s = seoData.settings || {};
@@ -435,7 +437,7 @@
       </div>
 
       <div class="dash-stats">
-        ${stat('signups', 'signups', 'Agent sign-ups', signupsWeek, `this week · ${signupData.items.length} total`, '#/signups', signupsWeek ? 'good' : '')}
+        ${state.isSuper ? stat('signups', 'signups', 'Agent sign-ups', signupsWeek, `this week · ${signupData.items.length} total`, '#/signups', signupsWeek ? 'good' : '') : ''}
         ${stat('published', 'post', 'Published posts', published.length, `${posts.length} total`, '#/posts')}
         ${stat('drafts', 'draft', 'Drafts', drafts.length, drafts.length ? 'waiting to publish' : 'all caught up', '#/posts', drafts.length ? 'warn' : '')}
         ${stat('pages', 'page', 'Pages', pages.length + statics.length, `${statics.length} original · ${pages.length} custom`, '#/pages')}
@@ -467,7 +469,7 @@
           </div>
         </div>
 
-        <div class="card">
+        ${state.isSuper ? `<div class="card">
           <div class="card-head">Site setup <span class="pill ${done === checks.length ? 'ok' : 'accent'}">${done}/${checks.length}</span></div>
           <div class="card-body">
             <div class="dash-progress"><span style="width:${(done / checks.length) * 100}%"></span></div>
@@ -478,7 +480,7 @@
                 ${!c.ok && c.href ? `<a href="${c.href}" class="btn btn-sm">Set up</a>` : ''}
               </li>`).join('')}</ul>
           </div>
-        </div>
+        </div>` : ''}
 
         <div class="card dash-wide">
           <div class="card-head">Recent activity <a href="#/posts" class="btn btn-ghost btn-sm" style="margin-left:auto">All posts →</a></div>
@@ -523,7 +525,7 @@
         <a href="#/${K.add}" class="btn btn-primary" id="add-new-${kind}"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Add New ${K.one}</a>
         ${isPage ? '<span class="spacer"></span><a href="#/menu" class="btn btn-ghost" id="pages-edit-menu">Edit header menu</a>' : ''}
       </div>
-      ${isPage ? '<p class="hint" style="margin:-8px 0 16px">Pages you create here use your site\'s header and footer. Your original pages (home page, game pages…) are listed under <a href="#/seo/pages">SEO → Static Pages</a>.</p>' : ''}
+      ${isPage ? '<p class="hint" style="margin:-8px 0 16px">Pages you create here use your site\'s header and footer. Your original pages (home page, game pages…) are listed under ' + (state.isSuper ? '<a href="#/seo/pages">SEO → Static Pages</a>' : 'SEO → Static Pages (super admin)') + '.</p>' : ''}
       <div class="toolbar">
         <div class="tabs" id="status-tabs"></div>
         <label class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
@@ -614,7 +616,7 @@
     const K = KINDS[kind];
     const isPage = kind === 'page';
     const noun = K.one.toLowerCase();
-    const [terms, posts, seoData, loaded] = await Promise.all([api('/terms'), api(K.base), api('/seo'), id ? api(`${K.base}/${id}`) : null]);
+    const [terms, posts, seoData, loaded] = await Promise.all([api('/terms'), api(K.base), api('/seo/editor'), id ? api(`${K.base}/${id}`) : null]);
     const seoS = seoData.settings;
     const post = loaded || {
       title: '', slug: '', content: '', excerpt: '', status: 'draft', categories: ['blog'], tags: [],

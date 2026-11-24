@@ -350,7 +350,7 @@ api.post('/terms/:type', (req, res) => {
 });
 
 // rename + SEO for a category / tag / author archive
-api.put('/terms/:type/:slug', async (req, res, next) => {
+api.put('/terms/:type/:slug', auth.requireSuper, async (req, res, next) => { // archive titles / noindex = SEO screen
   try {
     const { type, slug } = req.params;
     const terms = store.getTerms();
@@ -365,9 +365,20 @@ api.put('/terms/:type/:slug', async (req, res, next) => {
 });
 
 /* ---------- SEO settings ---------- */
-api.get('/seo', (req, res) => res.json({ settings: seo.get(), defaultRobotsTxt: render.defaultRobotsTxt(), siteUrl: cfg.SITE_URL }));
+// The SEO settings screen holds the site-wide custom <head> code (it runs on every public page), robots.txt,
+// redirects and the Search Console / Analytics codes: super admin only. The post and page editors only need the
+// few values below to preview titles, so every user gets just those.
+api.get('/seo/editor', (req, res) => {
+  const s = seo.get();
+  res.json({
+    settings: { separator: s.separator, postTitle: s.postTitle, pageTitle: s.pageTitle, articleSchema: s.articleSchema, schemaType: s.schemaType, defaultOgImage: s.defaultOgImage },
+    siteUrl: cfg.SITE_URL,
+  });
+});
 
-api.put('/seo', async (req, res, next) => {
+api.get('/seo', auth.requireSuper, (req, res) => res.json({ settings: seo.get(), defaultRobotsTxt: render.defaultRobotsTxt(), siteUrl: cfg.SITE_URL }));
+
+api.put('/seo', auth.requireSuper, async (req, res, next) => {
   try {
     const b = req.body || {};
     const cur = seo.get();
@@ -446,7 +457,7 @@ api.put('/social', async (req, res, next) => {
 });
 
 api.get('/seo/pages', (req, res) => res.json(seo.listPages()));
-api.put('/seo/pages', async (req, res, next) => {
+api.put('/seo/pages', auth.requireSuper, async (req, res, next) => { // (reading the list stays open: the menu editor picks pages from it)
   try {
     const o = seo.savePage(String(req.body.path || ''), req.body);
     res.json({ override: o, build: await rebuild() });
@@ -499,6 +510,8 @@ api.get('/media', (req, res) => {
 });
 
 /* ---------- sign-ups ---------- */
+// Sign-ups are people's names, emails and phone numbers: super admin only (the whole /signups tree).
+api.use('/signups', auth.requireSuper);
 api.get('/signups', (req, res) => res.json({ items: signups.list(), unverified: signups.listUnverified(), botCheck: !!turnstile.settings() }));
 // "Unverified" = sent without passing the bot check (see cms/signups.js); these routes come before /signups/:id
 api.delete('/signups/unverified', (req, res) => res.json({ unverified: signups.clearUnverified((req.body || {}).ids) }));
