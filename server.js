@@ -27,6 +27,8 @@ const signups = require('./cms/signups');
 const turnstile = require('./cms/turnstile');
 const images = require('./cms/images');
 const hosts = require('./cms/hosts');
+const sanitize = require('./cms/sanitize');
+const linkcheck = require('./cms/linkcheck');
 
 auth.load(); // creates the first admin account if none exists
 
@@ -199,11 +201,18 @@ api.get('/posts/:id', (req, res) => {
   return p ? res.json(p) : res.status(404).json({ error: 'Post not found' });
 });
 
-function applyInput(post, body, user, kind = 'post') {
+function applyInput(post, body, user, kind = 'post', info = {}) {
   const manifest = store.readJson(cfg.MANIFEST_FILE, { posts: [] });
   const s = (v) => (v === undefined || v === null ? '' : String(v));
   post.title = s(body.title).trim() || 'Untitled';
   post.content = s(body.content);
+  // Bodies are published as raw HTML: only a super admin may add scripts (see cms/sanitize.js). `info` tells the
+  // caller what was taken out so the writer can be told.
+  if (!auth.isSuper(user)) {
+    const clean = sanitize.stripScripts(post.content);
+    post.content = clean.html;
+    info.removed = clean.removed; info.what = clean.what;
+  }
   post.excerpt = s(body.excerpt).trim();
   post.seoTitle = s(body.seoTitle).trim();
   post.metaDescription = s(body.metaDescription).trim();
@@ -239,11 +248,12 @@ function applyInput(post, body, user, kind = 'post') {
 api.post('/posts', async (req, res, next) => {
   try {
     const now = new Date().toISOString();
-    const post = applyInput({ id: store.nextId(), date: now, extraCss: [] }, req.body, req.user);
+    const info = {};
+    const post = applyInput({ id: store.nextId(), date: now, extraCss: [] }, req.body, req.user, 'post', info);
     store.savePost(post);
     if (post.status === 'publish') seo.removeRedirect(`/${post.slug}/`);
     const build = post.status === 'publish' ? await rebuild() : null;
-    res.json({ post, build });
+    res.json({ post, build, stripped: info.removed || 0, strippedWhat: info.what || [] });
   } catch (e) { next(e); }
 });
 
@@ -253,13 +263,14 @@ api.put('/posts/:id', async (req, res, next) => {
     if (!existing) return res.status(404).json({ error: 'Post not found' });
     const wasPublished = existing.status === 'publish';
     const oldSlug = existing.slug;
-    const post = applyInput(existing, req.body, req.user);
+    const info = {};
+    const post = applyInput(existing, req.body, req.user, 'post', info);
     store.savePost(post);
     // keep old links working: 301 from the previous URL
     if (wasPublished && oldSlug && oldSlug !== post.slug) seo.addRedirect(`/${oldSlug}/`, `/${post.slug}/`, 301);
     if (post.status === 'publish') seo.removeRedirect(`/${post.slug}/`);
     const build = wasPublished || post.status === 'publish' ? await rebuild() : null;
-    res.json({ post, build });
+    res.json({ post, build, stripped: info.removed || 0, strippedWhat: info.what || [] });
   } catch (e) { next(e); }
 });
 
@@ -274,6 +285,8 @@ api.delete('/posts/:id', async (req, res, next) => {
 });
 
 api.post('/preview', (req, res) => {
+  // the preview shows what would be published, so staff see it without scripts, as it will be saved
+  if (!auth.isSuper(req.user) && typeof req.body.content === 'string') req.body.content = sanitize.stripScripts(req.body.content).html;
   if (req.body.kind === 'page') {
     const base = (req.body.id && store.getPage(req.body.id)) || { id: 0, date: new Date().toISOString() };
     const page = { ...base, ...req.body, id: base.id, slug: base.slug || 'preview', modified: new Date().toISOString() };
@@ -300,10 +313,11 @@ api.get('/pages/:id', (req, res) => {
 });
 api.post('/pages', async (req, res, next) => {
   try {
-    const page = applyInput({ id: store.nextId(), date: new Date().toISOString() }, req.body, req.user, 'page');
+    const info = {};
+    const page = applyInput({ id: store.nextId(), date: new Date().toISOString() }, req.body, req.user, 'page', info);
     store.savePage(page);
     if (page.status === 'publish') seo.removeRedirect(`/${page.slug}/`);
-    res.json({ post: page, build: page.status === 'publish' ? await rebuild() : null });
+    res.json({ post: page, build: page.status === 'publish' ? await rebuild() : null, stripped: info.removed || 0, strippedWhat: info.what || [] });
   } catch (e) { next(e); }
 });
 api.put('/pages/:id', async (req, res, next) => {
@@ -312,11 +326,12 @@ api.put('/pages/:id', async (req, res, next) => {
     if (!existing) return res.status(404).json({ error: 'Page not found' });
     const wasPublished = existing.status === 'publish';
     const oldSlug = existing.slug;
-    const page = applyInput(existing, req.body, req.user, 'page');
+    const info = {};
+    const page = applyInput(existing, req.body, req.user, 'page', info);
     store.savePage(page);
     if (wasPublished && oldSlug && oldSlug !== page.slug) seo.addRedirect(`/${oldSlug}/`, `/${page.slug}/`, 301);
     if (page.status === 'publish') seo.removeRedirect(`/${page.slug}/`);
-    res.json({ post: page, build: wasPublished || page.status === 'publish' ? await rebuild() : null });
+    res.json({ post: page, build: wasPublished || page.status === 'publish' ? await rebuild() : null, stripped: info.removed || 0, strippedWhat: info.what || [] });
   } catch (e) { next(e); }
 });
 api.delete('/pages/:id', async (req, res, next) => {
@@ -510,6 +525,15 @@ api.get('/media', (req, res) => {
 });
 
 /* ---------- sign-ups ---------- */
+/* ---------- link checker (super admin only: it makes the server fetch other sites' addresses, see cms/linkcheck.js) ---------- */
+api.use('/linkcheck', auth.requireSuper);
+api.get('/linkcheck', (req, res) => res.json(linkcheck.status()));
+api.post('/linkcheck', (req, res) => {
+  if (!linkcheck.start()) return res.status(409).json({ error: 'A check is already running.' });
+  res.json(linkcheck.status());
+});
+api.post('/linkcheck/stop', (req, res) => res.json({ stopped: linkcheck.stop(), ...linkcheck.status() }));
+
 // Sign-ups are people's names, emails and phone numbers: super admin only (the whole /signups tree).
 api.use('/signups', auth.requireSuper);
 api.get('/signups', (req, res) => res.json({ items: signups.list(), unverified: signups.listUnverified(), botCheck: !!turnstile.settings() }));

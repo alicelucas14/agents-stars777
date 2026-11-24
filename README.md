@@ -112,7 +112,23 @@ archives (with pagination), "similar posts", previous/next links, `sitemap.xml`,
   which becomes the super admin automatically on first start (the log says which). Change roles in the
   Users screen, or on the server: `node tools/set-role.js <username> <super|staff>`. There is always
   at least one super admin, and nobody can change their own role.
+- **No scripts from staff:** post and page bodies are published as raw HTML, so for staff accounts the
+  server removes `<script>`, `<base>`, `<object>`/`<embed>`/`<meta>`, inline event handlers (`onclick`,
+  `onerror`…), `iframe srcdoc` and `javascript:` / `data:text/html` links when saving or previewing
+  (`cms/sanitize.js`). Everything else is stored exactly as written; the editor tells the writer what was
+  removed. Only a super admin can publish scripts.
 - `node tools/set-password.js <username> <password>` follows the same password rules.
+
+### Link checker (super admin)
+
+Admin → **Link checker** reads every page in `sitemap.xml` and checks each link and picture once
+(`cms/linkcheck.js`): addresses on this site are asked of the running server itself, other sites are
+fetched gently (HEAD, GET as fallback, up to 5 redirects, one request at a time per site). Results show
+what is broken, unreachable, redirected or can't be verified (sites that refuse bots), with every page
+the address appears on and an *Edit* link for posts and pages. Only the last result is kept
+(`content/linkcheck.json`, not committed). Because it makes the server fetch addresses, it only contacts
+public internet addresses – anything that resolves to a private, loopback, link-local or metadata address
+is reported as "points to a private network" and never requested.
 
 ## Notes
 - Static pages (homepage, game pages, etc.) are plain HTML in `site/`. Their content

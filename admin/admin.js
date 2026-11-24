@@ -11,7 +11,7 @@
   let view = $('#view');
   const state = { me: null, isSuper: false, mustChange: false, minPassword: 12, siteUrl: '', siteName: '', dirty: false, lastHash: '', skipGuard: false };
   // screens only a super admin may open (the server refuses the matching API calls for everyone else)
-  const SUPER_ONLY = ['users', 'seo', 'signups'];
+  const SUPER_ONLY = ['users', 'seo', 'signups', 'linkcheck'];
 
   const slugify = (t) => String(t || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
     .replace(/&[a-z]+;/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 90);
@@ -354,6 +354,7 @@
       else if (name === 'settings') await renderSettings();
       else if (name === 'users') await renderUsers();
       else if (name === 'signups') await renderSignups();
+      else if (name === 'linkcheck') await renderLinkCheck();
       else if (name === 'posts') await renderPosts();
       else await renderDashboard();
     } catch (e) {
@@ -1206,6 +1207,12 @@
         const p = r.post;
         const verb = p.status === 'publish' ? (newStatus === 'publish' && status !== 'publish' ? `${K.one} published.` : `${K.one} updated.`) : 'Draft saved.';
         toast(`${verb}${buildNote(r.build)}${p.status === 'publish' ? ` <a href="/${esc(p.slug)}/" target="_blank" rel="noopener">View ${noun}</a>` : ''}`);
+        if (r.stripped) {
+          // staff accounts can't publish scripts: show the cleaned text so what is on screen is what was saved
+          toast(`${r.stripped} unsafe item${r.stripped === 1 ? '' : 's'} (${esc((r.strippedWhat || []).join(', '))}) ${r.stripped === 1 ? 'was' : 'were'} removed from the content – only a super admin can publish scripts.`, 'err', 12000);
+          const ed = window.tinymce && tinymce.get('post-content');
+          if (ed && ed.initialized) ed.setContent(p.content || '');
+        }
         if (isNew || p.slug !== post.slug || p.status !== status) go(`#/${K.edit}/${p.id}`);
         else { Object.assign(post, p); slug = p.slug; drawPermalink(false); busy(btn, false); }
       } catch (ex) {
@@ -2373,6 +2380,95 @@
   /* =========================================================
      SETTINGS
      ========================================================= */
+  /* ---- Link checker (super admin only; see cms/linkcheck.js) ---- */
+  async function renderLinkCheck() {
+    const [first, posts, pages] = await Promise.all([api('/linkcheck'), api('/posts').catch(() => []), api('/pages').catch(() => [])]);
+    let s = first, filter = 'broken';
+    // page address -> the post / page in the editor, so a problem can be fixed in one click
+    const editFor = {};
+    const pathOf = (u) => { try { return decodeURI(new URL(u, location.origin).pathname); } catch { return ''; } };
+    for (const p of posts) if (p.url) editFor[pathOf(p.url)] = `#/edit/${p.id}`;
+    for (const p of pages) if (p.url) editFor[pathOf(p.url)] = `#/edit-page/${p.id}`;
+
+    view.innerHTML = `
+      <div class="page-head">
+        <h1>Link checker</h1>
+        <span class="spacer"></span>
+        <button class="btn btn-primary" id="lc-run">Check all links</button>
+        <button class="btn" id="lc-stop" hidden>Stop</button>
+      </div>
+      <p class="hint" style="margin:-8px 0 16px">Reads every page in your sitemap and checks each link and picture once. Addresses on this site are asked of the site itself; other sites are visited gently, one at a time. It takes a few minutes – you can leave this screen and come back.</p>
+      <div class="card" id="lc-status-card"><div class="card-body" id="lc-status"></div></div>
+      <div class="card" style="margin-top:16px" id="lc-results-card">
+        <div class="toolbar"><div class="tabs" id="lc-tabs"></div></div>
+        <p class="hint" id="lc-help" style="margin:4px 20px 12px"></p>
+        <div style="overflow-x:auto"><table class="posts"><thead><tr><th>Address</th><th>Problem</th><th>Found on</th></tr></thead><tbody id="lc-body"></tbody></table></div>
+      </div>`;
+
+    const LABEL = { broken: 'Broken', unreachable: 'Unreachable', redirect: 'Redirects', blocked: "Can't verify" };
+    const HELP = {
+      broken: 'These need fixing: the page or picture is gone, the domain does not exist, or the site is broken.',
+      unreachable: 'No answer in time. Often temporary – run the check again before changing anything.',
+      redirect: 'Still work, but the address has moved. Linking to the new address is faster and safer for SEO.',
+      blocked: 'These sites refuse automatic checks (common for Facebook, Instagram, WhatsApp, Telegram, Cloudflare-protected sites). Open them yourself to be sure.',
+    };
+    const when = (d) => `${fmtDate(d)} ${fmtTime(d)}`;
+    const tail = (u) => (u.length > 70 ? `${u.slice(0, 48)}…${u.slice(-18)}` : u);
+
+    function draw() {
+      const last = s.last;
+      const el = $('#lc-status');
+      $('#lc-run').hidden = s.running; $('#lc-stop').hidden = !s.running;
+      if (s.running) {
+        const { done, total } = s.progress || { done: 0, total: 0 };
+        el.innerHTML = `<strong>${spinner} ${total ? 'Checking links…' : 'Reading pages…'}</strong>
+          <div class="dash-progress" style="margin:10px 0 4px"><span style="width:${total ? Math.round((done / total) * 100) : 5}%"></span></div>
+          <span class="muted">${total ? `${done} of ${total} addresses checked` : 'collecting the links on every page'}</span>`;
+      } else if (!last) {
+        el.innerHTML = '<span class="muted">Not run yet. Press <b>Check all links</b>.</span>';
+      } else {
+        const t = last.stats;
+        el.innerHTML = `<strong>${last.cancelled ? 'Stopped early – ' : ''}Last check: ${when(last.finishedAt)}</strong>
+          <div class="muted" style="margin-top:4px">${last.pagesRead} pages read · ${last.checked} addresses checked · <b style="color:${t.broken ? 'var(--danger)' : 'inherit'}">${t.broken} broken</b> · ${t.unreachable} unreachable · ${t.redirect} redirects · ${t.blocked} can't verify · ${t.ok} fine</div>
+          ${s.error ? `<div class="notice" style="margin-top:8px">${esc(s.error)}</div>` : ''}`;
+      }
+      const items = (last && last.items) || [];
+      const count = (k) => items.filter((i) => i.result === k).length;
+      $('#lc-tabs').innerHTML = Object.keys(LABEL).map((k) => `<button class="tab ${filter === k ? 'active' : ''}" data-lcf="${k}" id="lc-tab-${k}">${LABEL[k]} <span class="count">${count(k)}</span></button>`).join('');
+      const rows = items.filter((i) => i.result === filter);
+      $('#lc-body').innerHTML = rows.length ? rows.map((i) => `
+        <tr>
+          <td style="max-width:420px;word-break:break-all"><a href="${esc(i.url)}" target="_blank" rel="noopener noreferrer" title="${esc(i.url)}">${esc(tail(i.url))}</a>
+            <div class="muted" style="font-size:12px">${i.kind === 'image' ? 'Picture' : 'Link'}${i.internal ? ' · on this site' : ' · other site'}</div></td>
+          <td>${i.code ? `<span class="pill">${i.code}</span> ` : ''}${esc(i.message || '')}${i.finalUrl && i.result === 'redirect' ? `<div class="muted" style="font-size:12px;word-break:break-all">→ <a href="${esc(i.finalUrl)}" target="_blank" rel="noopener noreferrer">${esc(tail(i.finalUrl))}</a></div>` : ''}</td>
+          <td>${i.pages.slice(0, 3).map((p) => `<div><a href="${esc(p)}" target="_blank" rel="noopener">${esc(p)}</a>${editFor[p] ? ` · <a href="${editFor[p]}">Edit</a>` : ''}</div>`).join('')}${i.count > 3 ? `<div class="muted" style="font-size:12px">+ ${i.count - 3} more place${i.count - 3 === 1 ? '' : 's'}</div>` : ''}</td>
+        </tr>`).join('')
+        : `<tr><td colspan="3"><div class="empty" style="padding:26px">${last ? (items.length ? `Nothing in this list. ${HELP[filter]}` : 'No problems found 🎉') : 'Run a check to see results here.'}</div></td></tr>`;
+      const help = $('#lc-help'); if (help) help.textContent = HELP[filter];
+    }
+
+    let timer = null;
+    const poll = () => {
+      clearInterval(timer);
+      timer = setInterval(async () => {
+        if (!document.body.contains($('#lc-status'))) return clearInterval(timer); // left this screen
+        try { s = await api('/linkcheck'); draw(); if (!s.running) clearInterval(timer); } catch { /* try again next time */ }
+      }, 2000);
+    };
+
+    view.addEventListener('click', async (e) => {
+      const f = e.target.closest('[data-lcf]');
+      if (f) { filter = f.dataset.lcf; draw(); return; }
+      if (e.target.closest('#lc-run')) {
+        try { s = await api('/linkcheck', { method: 'POST' }); draw(); poll(); } catch (ex) { toast(esc(ex.message), 'err'); }
+      } else if (e.target.closest('#lc-stop')) {
+        try { s = await api('/linkcheck/stop', { method: 'POST' }); toast('Stopping…'); poll(); } catch (ex) { toast(esc(ex.message), 'err'); }
+      }
+    });
+    draw();
+    if (s.running) poll();
+  }
+
   async function renderSettings() {
     const posts = state.mustChange ? [] : await api('/posts'); // everything else is blocked until the password is replaced
     const min = state.minPassword;
