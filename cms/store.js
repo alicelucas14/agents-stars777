@@ -16,9 +16,28 @@ function readJson(file, fallback) {
 }
 function writeJson(file, data) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
+  writeText(file, JSON.stringify(data, null, 2));
+}
+
+/**
+ * Write a file so a visitor (or the server itself) never sees it half-written: the text goes to a
+ * temporary file next to it and is renamed over the old one in one step. If the system won't allow the
+ * rename (Windows, file open elsewhere) it falls back to writing in place.
+ */
+function writeText(file, text) {
   const tmp = file + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
-  fs.renameSync(tmp, file); // atomic-ish write
+  fs.writeFileSync(tmp, text);
+  for (let attempt = 0; ; attempt++) {
+    try { fs.renameSync(tmp, file); return; }
+    catch (e) {
+      if (!['EPERM', 'EBUSY', 'EACCES'].includes(e.code)) { try { fs.unlinkSync(tmp); } catch {} throw e; }
+      // Windows refuses while another process has the file open: wait a moment, then give up and write in place
+      if (attempt < 5) { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10); continue; }
+      fs.writeFileSync(file, text);
+      try { fs.unlinkSync(tmp); } catch {}
+      return;
+    }
+  }
 }
 
 /* ---------- slugs ---------- */
@@ -120,7 +139,7 @@ function ensureTerm(type, nameOrSlug) {
 }
 
 module.exports = {
-  readJson, writeJson, slugify,
+  readJson, writeJson, writeText, slugify,
   allPosts, publishedPosts, getPost, nextId, savePost, deletePost, slugAvailable, uniqueSlug,
   allPages, publishedPages, getPage, savePage, deletePage,
   getTerms, saveTerms, ensureTerm,

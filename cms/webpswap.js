@@ -17,6 +17,7 @@ const fs = require('fs');
 const path = require('path');
 const cfg = require('./config');
 const social = require('./social');
+const store = require('./store');
 
 const UPLOADS = path.join(cfg.SITE_DIR, 'wp-content', 'uploads');
 const TAG = /<(?:img|source)\b[^>]*>/gi;
@@ -86,7 +87,7 @@ function applyAll() {
     const html = fs.readFileSync(f, 'utf8');
     if (!HAS_IMG.test(html)) continue;
     const out = swap(html);
-    if (out !== html) { fs.writeFileSync(f, out); changed++; }
+    if (out !== html) { store.writeText(f, out); changed++; }
   }
   return changed;
 }

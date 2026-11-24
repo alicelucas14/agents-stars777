@@ -8,6 +8,7 @@
  */
 const fs = require('fs');
 const social = require('./social');
+const store = require('./store');
 
 const JS = `(function(){
 var L=location,H=history,R=H.replaceState,P=H.pushState;
@@ -45,7 +46,7 @@ function applyAll() {
   for (const f of social.htmlFiles()) {
     const html = fs.readFileSync(f, 'utf8');
     const out = inject(html);
-    if (out !== html) { fs.writeFileSync(f, out); changed++; }
+    if (out !== html) { store.writeText(f, out); changed++; }
   }
   return changed;
 }

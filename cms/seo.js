@@ -222,7 +222,7 @@ function applyPage(file, pagePath, o) {
     setMeta($, 'property', 'og:image:secure_url', absu(o.ogImage));
     setMeta($, 'name', 'twitter:image', absu(o.ogImage));
   }
-  fs.writeFileSync(file, $.html());
+  store.writeText(file, $.html());
 }
 
 /**
@@ -273,7 +273,7 @@ function applyGlobalToStatic() {
     out = `${head}${block}\n${rest}`;
     const h = ensureH1(out); // one <h1> per page (SEO)
     if (h) out = h.html;
-    if (out !== html) { fs.writeFileSync(file, out); changed++; }
+    if (out !== html) { store.writeText(file, out); changed++; }
   }
   return changed;
 }

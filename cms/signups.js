@@ -17,7 +17,7 @@
  *                                ones out of the list nor make the form refuse real visitors.
  * Without Turnstile everything goes to Sign-ups, as before.
  *
- * Both files hold personal data – never commit them.
+ * These files hold personal data – never commit them (signups.json, signups-unverified.json, signups-archive.jsonl).
  */
 const fs = require('fs');
 const path = require('path');
@@ -30,6 +30,7 @@ const { ipKey } = require('./net');
 
 const FILE = path.join(cfg.CONTENT_DIR, 'signups.json');
 const UNVERIFIED_FILE = path.join(cfg.CONTENT_DIR, 'signups-unverified.json');
+const ARCHIVE_FILE = path.join(cfg.CONTENT_DIR, 'signups-archive.jsonl');
 const MAX_KEPT = 10000;
 const MAX_UNVERIFIED = 2000;
 const THANKS = "Thank you! We've received your registration and will contact you shortly.";
@@ -38,6 +39,22 @@ const BUSY = 'We are receiving a lot of registrations right now – please try a
 
 // Elementor field ids -> our names (both forms use the same ids)
 const FIELDS = { name: 'name', email: 'email', field_db40f87: 'contactVia', field_d8582dc: 'contact', message: 'message', field_4e9e876: 'terms' };
+
+/**
+ * The live list is capped (every sign-up rewrites the whole file). The oldest ones past the cap move to
+ * an archive file, one JSON object per line, instead of being deleted. If the archive can't be written
+ * the list is left as it is – nothing is dropped.
+ */
+function capped(items) {
+  if (items.length <= MAX_KEPT) return items;
+  try {
+    fs.appendFileSync(ARCHIVE_FILE, items.slice(MAX_KEPT).map((e) => JSON.stringify(e) + '\n').join(''), { mode: 0o600 });
+    return items.slice(0, MAX_KEPT);
+  } catch (e) {
+    console.warn('Sign-ups: could not archive old entries (%s) – keeping them in the list', e.message);
+    return items;
+  }
+}
 
 const byDate = (a, b) => new Date(b.date) - new Date(a.date);
 const read = (file) => {
@@ -74,7 +91,7 @@ function approve(id) {
   if (!s) return null;
   const { why, ...entry } = s;
   // add first, then take it out of Unverified: an interruption leaves a duplicate, never a loss
-  store.writeJson(FILE, [{ ...entry, approved: new Date().toISOString() }, ...list().filter((x) => x.id !== id)].slice(0, MAX_KEPT));
+  store.writeJson(FILE, capped([{ ...entry, approved: new Date().toISOString() }, ...list().filter((x) => x.id !== id)]));
   store.writeJson(UNVERIFIED_FILE, waiting.filter((x) => x.id !== id));
   return { items: list(), unverified: listUnverified() };
 }
@@ -127,7 +144,7 @@ async function add(fields, meta = {}) {
   };
   // read + write without an await in between, so two sign-ups at once can't overwrite each other
   if (unverified) store.writeJson(UNVERIFIED_FILE, [entry, ...listUnverified()].slice(0, MAX_UNVERIFIED));
-  else store.writeJson(FILE, [entry, ...list()].slice(0, MAX_KEPT));
+  else store.writeJson(FILE, capped([entry, ...list()]));
   return { entry, unverified };
 }
 
@@ -226,7 +243,7 @@ function applyAll() {
     const html = fs.readFileSync(file, 'utf8');
     if (!html.includes('elementor-form') && !html.includes('<!--cms:signup-->')) continue;
     const out = inject(html, siteKey);
-    if (out !== html) { fs.writeFileSync(file, out); changed++; }
+    if (out !== html) { store.writeText(file, out); changed++; }
   }
   return changed;
 }

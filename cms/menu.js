@@ -80,7 +80,7 @@ function save(items) {
     if (!fs.existsSync(f)) continue;
     const html = fs.readFileSync(f, 'utf8');
     const out = applyTo(html, clean);
-    if (out !== html) { fs.writeFileSync(f, out); files++; }
+    if (out !== html) { store.writeText(f, out); files++; }
   }
   return { items: clean, files };
 }

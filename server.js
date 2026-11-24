@@ -26,6 +26,7 @@ const legacy = require('./cms/legacy');
 const signups = require('./cms/signups');
 const turnstile = require('./cms/turnstile');
 const images = require('./cms/images');
+const hosts = require('./cms/hosts');
 
 auth.load(); // creates the first admin account if none exists
 
@@ -40,7 +41,9 @@ app.set('trust proxy', 1);
 app.use((req, res, next) => {
   if (process.env.FORCE_HTTPS === '0' || req.secure || !req.headers['x-forwarded-proto']) return next();
   if (req.method !== 'GET' && req.method !== 'HEAD') return res.status(403).json({ error: 'HTTPS required' });
-  res.redirect(301, `https://${new URL(cfg.SITE_URL).host}${req.originalUrl}`);
+  // the admin address stays on itself; everything else goes to the public address
+  const host = hosts.adminHost && hosts.hostOf(req) === hosts.adminHost ? hosts.adminHost : new URL(cfg.SITE_URL).host;
+  res.redirect(301, `https://${host}${req.originalUrl}`);
 });
 
 app.use(compression({ threshold: 1024 }));
@@ -73,6 +76,26 @@ app.use((req, res, next) => {
   if (/^\/(?:admin|api)(?:\/|$)/i.test(req.path) && !/^\/(?:admin|api)(?:\/|$)/.test(req.path)) return notFound(req, res);
   next();
 });
+
+/* ---------- separate admin address (cms/hosts.js; only when an admin host is set) ---------- */
+const ASSET_EXT = /\.(?:css|js|mjs|png|jpe?g|gif|webp|avif|svg|ico|woff2?|ttf|otf|eot)$/i;
+if (hosts.adminHost) {
+  app.use((req, res, next) => {
+    const host = hosts.hostOf(req);
+    const adminPath = /^\/(?:admin|api)(?:\/|$)/.test(req.path);
+    if (host === hosts.adminHost) {
+      res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+      if (req.path === '/robots.txt') return res.type('text').send('User-agent: *\nDisallow: /\n');
+      if (req.path === '/') return res.redirect(302, '/admin/');
+      if (adminPath) return req.path === '/api/signup' ? notFound(req, res) : next(); // the registration form belongs to the public site
+      if ((req.method === 'GET' || req.method === 'HEAD') && ASSET_EXT.test(req.path)) return next(); // what the editor and preview load
+      if (req.method === 'GET' || req.method === 'HEAD') return res.redirect(302, cfg.SITE_URL + req.originalUrl); // pages live on the public site
+      return notFound(req, res);
+    }
+    if (host === hosts.siteHost && adminPath && req.path !== '/api/signup') return notFound(req, res);
+    next();
+  });
+}
 
 // JSON bodies: the public login + sign-up forms get a small limit; the 10 MB limit (long posts)
 // only applies on the admin API, after the login check – so anonymous visitors can't send
@@ -140,6 +163,18 @@ app.post('/api/signup', publicJson, async (req, res, next) => {
 });
 
 const api = express.Router();
+// Changes made through the admin API have to come from the admin screens themselves: a browser always says which
+// site a request was sent from (Origin), so another page – even a public page of this site – can't make it for them.
+api.use((req, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
+  const origin = req.headers.origin;
+  if (origin !== undefined) {
+    let ok = false;
+    try { const h = hosts.bareHost(new URL(origin).hostname); ok = h === hosts.hostOf(req) || h === (hosts.adminHost || hosts.siteHost); } catch {}
+    if (!ok) return res.status(403).json({ error: 'This request did not come from the admin panel.' });
+  }
+  next();
+});
 api.use(auth.requireAuth);
 api.use(adminJson);
 
@@ -336,6 +371,14 @@ api.put('/seo', async (req, res, next) => {
     const redirects = (Array.isArray(b.redirects) ? b.redirects : [])
       .map((r) => ({ from: seo.normPath(r.from), to: /^https?:\/\//i.test(String(r.to || '').trim()) ? String(r.to).trim() : seo.normPath(r.to), type: +r.type === 302 ? 302 : 301, created: r.created || new Date().toISOString() }))
       .filter((r) => r.from && r.to && r.from !== '/' && r.from !== r.to);
+    // The screen sends the list it was showing plus which sources it knew about (redirectsKnown).
+    // Redirects it never saw – e.g. made by renaming a post while the SEO screen was open – are kept,
+    // not wiped; only the ones it knew about and no longer lists are removed.
+    if (Array.isArray(b.redirectsKnown)) {
+      const known = new Set(b.redirectsKnown.map((f) => seo.normPath(f)));
+      const listed = new Set(redirects.map((r) => r.from));
+      redirects.unshift(...cur.redirects.filter((r) => !known.has(seo.normPath(r.from)) && !listed.has(seo.normPath(r.from))));
+    }
     const updated = {
       ...cur,
       separator: str(b.separator, 5) || '-',
@@ -611,5 +654,6 @@ try { social.applyAll(); } catch (e) { console.warn('Social bar injection skippe
 try { cleanhash.applyAll(); } catch (e) { console.warn('Clean-hash injection skipped:', e.message); }
 try { signups.applyAll(); } catch (e) { console.warn('Sign-up form script skipped:', e.message); }
 console.log(turnstile.describe());
+console.log(hosts.describe());
 try { webpswap.applyAll(); } catch (e) { console.warn('Image -> WebP swap skipped:', e.message); }
 cfpurge.schedule('server start'); // a deploy restarts the server, so this clears Cloudflare's old copies

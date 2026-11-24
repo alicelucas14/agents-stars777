@@ -81,6 +81,21 @@ archives (with pagination), "similar posts", previous/next links, `sitemap.xml`,
    `SITE_URL` host over HTTPS. Set `FORCE_HTTPS=0` to turn this off.
 5. **Back up `content/` and `site/wp-content/uploads/`** – that is all your data.
 
+### Optional hardening (both are off until you set them up)
+
+- **Admin on its own address.** The public pages load third-party scripts, so the admin panel
+  is safer on a separate hostname (one level under the domain, e.g. `agents-admin.stars777.org`,
+  so Cloudflare's free certificate covers it). Point DNS + an nginx proxy for it at the same app
+  (port 3000), then set `ADMIN_HOST=agents-admin.stars777.org` (environment variable, or
+  `{ "adminHost": "…" }` in `content/hosts.json`, which is not committed) and restart. From then on
+  `/admin` and `/api` answer only on that hostname (the public site gives 404, except the
+  registration form's `/api/signup`), and the admin hostname redirects every page to the public site.
+  Details: `cms/hosts.js`. Remove the setting to go back.
+- **Origin reachable only through Cloudflare.** `sudo bash tools/server/cf-only.sh [domain]` makes that
+  one site's nginx proxy answer only Cloudflare's addresses (backs up, checks, and rolls back by itself
+  if the site stops working through Cloudflare); `--remove` undoes it. Re-run it to refresh
+  Cloudflare's address list.
+
 ## Notes
 - Static pages (homepage, game pages, etc.) are plain HTML in `site/`. Their content
   is not edited through the admin panel, but their SEO meta is (SEO → Static Pages).

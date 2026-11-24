@@ -338,7 +338,7 @@ function applyAll() {
   for (const f of htmlFiles()) {
     const html = fs.readFileSync(f, 'utf8');
     const out = inject(html, b);
-    if (out !== html) { fs.writeFileSync(f, out); changed++; }
+    if (out !== html) { store.writeText(f, out); changed++; }
   }
   return changed;
 }

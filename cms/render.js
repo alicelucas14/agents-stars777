@@ -105,7 +105,7 @@ function fill(tpl, map) {
 function writePage(rel, html) {
   const file = path.join(cfg.SITE_DIR, ...rel.split('/').filter(Boolean), 'index.html');
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, webpswap.swap(cleanhash.inject(social.inject(html))));
+  store.writeText(file, webpswap.swap(cleanhash.inject(social.inject(html))));
 }
 
 /* ---------- shell compilation ---------- */
@@ -501,7 +501,7 @@ ${latest ? `<div style="max-width:640px;margin:28px auto 0"><h2 style="font-size
     PAGE_HEADER: fill(S.pageHeaderTpl, { H1: 'Page not found' }),
     CONTENT: content,
   });
-  fs.writeFileSync(path.join(cfg.SITE_DIR, '404.html'), cleanhash.inject(social.inject(html)));
+  store.writeText(path.join(cfg.SITE_DIR, '404.html'), cleanhash.inject(social.inject(html)));
 }
 
 /* ---------- archives ---------- */
@@ -616,11 +616,11 @@ function writeSitemap(posts, archives, pages = []) {
   }
   const body = [...urls].map(([u, { mod, img }]) =>
     `  <url><loc>${esc(cfg.SITE_URL + encodeURI(decodeURI(u)))}</loc>${mod ? `<lastmod>${isoTz(mod)}</lastmod>` : ''}${img ? `<image:image><image:loc>${esc(abs(img))}</image:loc></image:image>` : ''}</url>`).join('\n');
-  fs.writeFileSync(path.join(cfg.SITE_DIR, 'sitemap.xml'),
+  store.writeText(path.join(cfg.SITE_DIR, 'sitemap.xml'),
     `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">\n${body}\n</urlset>\n`);
 
   const robots = (s.robotsTxt && s.robotsTxt.trim() ? s.robotsTxt.trim() + '\n' : defaultRobotsTxt());
-  fs.writeFileSync(path.join(cfg.SITE_DIR, 'robots.txt'),
+  store.writeText(path.join(cfg.SITE_DIR, 'robots.txt'),
     /sitemap:/i.test(robots) ? robots : `${robots}\nSitemap: ${cfg.SITE_URL}/sitemap.xml\n`);
   return urls.size;
 }
@@ -657,7 +657,7 @@ function writeLlmsTxt(posts, pages) {
     ...(s.rss ? [`- [RSS feed](${cfg.SITE_URL}/feed/)`] : []),
     '',
   ];
-  fs.writeFileSync(path.join(cfg.SITE_DIR, 'llms.txt'), out.join('\n'));
+  store.writeText(path.join(cfg.SITE_DIR, 'llms.txt'), out.join('\n'));
 }
 
 function writeFeed(posts, terms) {
@@ -674,7 +674,7 @@ function writeFeed(posts, terms) {
 ${(p.categories || []).map((c) => `      <category>${x(termName(terms, 'categories', c))}</category>`).join('\n')}
       <description>${x(p.metaDescription || excerptOf(p))}</description>
     </item>`).join('\n');
-  fs.writeFileSync(file, `<?xml version="1.0" encoding="UTF-8"?>
+  store.writeText(file, `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>${x(cfg.SITE_NAME)}</title>

@@ -9,3 +9,5 @@ content/cloudflare.json
 mirror-report.json
 content/signups-unverified.json
 content/turnstile.json
+content/signups-archive.jsonl
+content/hosts.json

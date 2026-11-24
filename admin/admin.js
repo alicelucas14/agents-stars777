@@ -1484,6 +1484,7 @@
     const [data, posts, terms] = await Promise.all([api('/seo'), api('/posts'), api('/terms')]);
     let s = data.settings;
     let redirects = s.redirects.map((r) => ({ ...r }));
+    let redirectsKnown = s.redirects.map((r) => r.from); // sources this screen has seen – the server keeps any others
     const TABS = [
       ['general', 'Titles & Meta'], ['social', 'Social & Schema'], ['indexing', 'Indexing & Sitemap'], ['webmaster', 'Webmaster Tools'],
       ['robots', 'robots.txt'], ['redirects', 'Redirects'], ['pages', 'Static Pages'], ['terms', 'Categories & Tags'],
@@ -1666,6 +1667,7 @@
       out.sameAs = $('#seo-sameAs').value.split('\n').map((x) => x.trim()).filter(Boolean);
       Object.keys(out.verification).forEach((k) => { out.verification[k] = verifyValue(out.verification[k]); });
       out.redirects = redirects;
+      out.redirectsKnown = redirectsKnown;
       return out;
     }
     async function saveAll(btn) {
@@ -1677,6 +1679,7 @@
         const r = await api('/seo', { method: 'PUT', body });
         s = r.settings;
         redirects = s.redirects.map((x) => ({ ...x }));
+        redirectsKnown = s.redirects.map((x) => x.from);
         Object.entries(s.verification).forEach(([k, v]) => { $(`#${fid(`verification.${k}`)}`).value = v; });
         drawRedirects();
         setDirty(false);
