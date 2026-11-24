@@ -9,7 +9,7 @@
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
   const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   let view = $('#view');
-  const state = { me: null, siteUrl: '', siteName: '', dirty: false, lastHash: '', skipGuard: false };
+  const state = { me: null, isSuper: false, mustChange: false, minPassword: 12, siteUrl: '', siteName: '', dirty: false, lastHash: '', skipGuard: false };
 
   const slugify = (t) => String(t || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
     .replace(/&[a-z]+;/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 90);
@@ -239,6 +239,8 @@
     const ct = res.headers.get('content-type') || '';
     const data = ct.includes('json') ? await res.json() : await res.text();
     if (res.status === 401 && path !== '/login' && path !== '/me') { showLogin(); throw new Error('Session expired – please log in again.'); }
+    // the password no longer meets the rules: only the "change password" screen works until it is replaced
+    if (res.status === 403 && data && typeof data === 'object' && data.code === 'password-change') { state.mustChange = true; if (location.hash !== '#/settings') location.hash = '#/settings'; }
     if (!res.ok) throw new Error((typeof data === 'object' && data && data.error) || (typeof data === 'string' && data) || res.statusText || `Request failed (${res.status})`);
     return data;
   }
@@ -299,11 +301,13 @@
   async function boot() {
     try {
       const me = await api('/me');
-      Object.assign(state, { me: me.user, siteUrl: me.siteUrl, siteName: me.siteName });
+      Object.assign(state, { me: me.user, isSuper: !!me.isSuper, mustChange: !!me.mustChangePassword, minPassword: me.minPassword || 12, siteUrl: me.siteUrl, siteName: me.siteName });
       $('#current-user').textContent = `(${me.user})`;
+      $('#nav-users').hidden = !state.isSuper; // the Users screen is for the super admin only
       $('#login-view').hidden = true;
       $('#app').hidden = false;
-      if (!location.hash || location.hash === '#/' || location.hash === '#') location.hash = '#/dashboard';
+      if (state.mustChange) { if (location.hash === '#/settings') route(); else location.hash = '#/settings'; }
+      else if (!location.hash || location.hash === '#/' || location.hash === '#') location.hash = '#/dashboard';
       else route();
     } catch { showLogin(); }
   }
@@ -326,6 +330,8 @@
     if ($('#app').hidden) return;
     state.lastHash = location.hash;
     const [, name, arg] = location.hash.match(/^#\/([^/]*)\/?(.*)$/) || [];
+    if (state.mustChange && name !== 'settings') return go('#/settings');                   // password must be replaced first
+    if (name === 'users' && !state.isSuper) return go('#/dashboard');                       // super admin only
     const navName = { edit: 'posts', 'edit-page': 'pages', 'new-page': 'pages' }[name] || name;
     $$('.side-nav a').forEach((a) => a.classList.toggle('active', a.dataset.nav === navName));
     destroyEditor();
@@ -361,7 +367,7 @@
   async function renderDashboard() {
     const [posts, pages, seoData, statics, media, usersData, signupData] = await Promise.all([
       api('/posts'), api('/pages'), api('/seo'),
-      api('/seo/pages').catch(() => []), api('/media').catch(() => []), api('/users').catch(() => ({ users: [] })),
+      api('/seo/pages').catch(() => []), api('/media').catch(() => []), state.isSuper ? api('/users').catch(() => ({ users: [] })) : Promise.resolve({ users: [] }),
       api('/signups').catch(() => ({ items: [] })),
     ]);
     const signupsWeek = signupData.items.filter((x) => Date.now() - new Date(x.date) < 7 * 864e5).length;
@@ -434,7 +440,7 @@
         ${stat('drafts', 'draft', 'Drafts', drafts.length, drafts.length ? 'waiting to publish' : 'all caught up', '#/posts', drafts.length ? 'warn' : '')}
         ${stat('pages', 'page', 'Pages', pages.length + statics.length, `${statics.length} original · ${pages.length} custom`, '#/pages')}
         ${stat('media', 'media', 'Media files', media.length, 'images in library', '#/media')}
-        ${stat('users', 'users', 'Users', (usersData.users || []).length, 'with admin access', '#/users')}
+        ${state.isSuper ? stat('users', 'users', 'Users', (usersData.users || []).length, 'with admin access', '#/users') : ''}
         ${stat('seo', 'seo', 'Average SEO score', avg == null ? '–' : `${avg}<small>/100</small>`, `based on ${scored.length} of ${live.length} analysed`, '#/posts', avg == null ? '' : scoreClass(avg))}
       </div>
 
@@ -2245,12 +2251,12 @@
 
     view.innerHTML = `
       <div class="page-head"><h1>Users</h1></div>
-      <p class="hint" style="margin:-8px 0 16px">Every user has full access to the admin panel (posts, pages, SEO, settings and users).</p>
-      <div class="settings-grid" style="max-width:1100px;grid-template-columns:minmax(0,1.4fr) minmax(300px,1fr)">
+      <p class="hint" style="margin:-8px 0 16px">Only super admins can see this screen: who has an account, when each person last logged in, and who can add or remove accounts. Staff accounts can use the rest of the admin panel.</p>
+      <div class="settings-grid" style="max-width:1280px;grid-template-columns:minmax(0,2fr) minmax(300px,1fr)">
         <div class="card">
           <div class="card-head">All users <span class="pill" id="users-count"></span></div>
           <table class="posts">
-            <thead><tr><th>Username</th><th>Added</th><th style="text-align:right">Actions</th></tr></thead>
+            <thead><tr><th>Username</th><th>Last login</th><th>Added</th><th style="text-align:right">Actions</th></tr></thead>
             <tbody id="users-body"></tbody>
           </table>
         </div>
@@ -2259,32 +2265,42 @@
           <div class="card-body">
             <label class="field"><span>Username <small>3–32 characters, lowercase</small></span>
               <input id="user-new-name" required minlength="3" maxlength="32" placeholder="e.g. niyon" autocomplete="off"></label>
-            <label class="field"><span>Password <small>min. 8 characters</small></span>
-              <div class="img-field"><input id="user-new-pw" type="text" required minlength="8" autocomplete="new-password">
+            <label class="field"><span>Role</span>
+              <select id="user-new-role"><option value="staff">Staff</option><option value="super">Super admin</option></select></label>
+            <label class="field"><span>Password <small>min. ${state.minPassword} characters</small></span>
+              <div class="img-field"><input id="user-new-pw" type="text" required minlength="${state.minPassword}" autocomplete="new-password">
               <button type="button" class="btn btn-sm" id="user-gen-pw">Generate</button></div></label>
-            <p class="hint" style="margin:0 0 14px">Share the username and password with the person privately. They can change their password under Settings after logging in.</p>
+            <p class="hint" style="margin:0 0 14px">Not a common password and not containing the username – "Generate" makes a good one. Share the username and password with the person privately. They can change their password under Settings after logging in.</p>
             <button class="btn btn-primary" id="user-add-btn" type="submit">Add user</button>
           </div>
         </form>
       </div>`;
 
     const fmt = (d) => (d ? fmtDate(d) : '<span class="muted">—</span>');
+    const lastLogin = (u) => (u.lastLogin
+      ? `${fmtDate(u.lastLogin)} <span class="muted">${fmtTime(u.lastLogin)}</span>`
+      : '<span class="muted" title="Nothing recorded yet – shows after their next login">—</span>');
+    const supers = () => users.filter((x) => x.role === 'super').length;
     function draw() {
       $('#users-count').textContent = users.length;
       $('#users-body').innerHTML = users.map((u) => `
         <tr>
-          <td><strong>${esc(u.username)}</strong>${u.username === me ? ' <span class="pill accent">you</span>' : ''}</td>
+          <td><strong>${esc(u.username)}</strong>${u.username === me ? ' <span class="pill accent">you</span>' : ''}
+            <span class="pill ${u.role === 'super' ? 'accent' : ''}" style="white-space:nowrap" id="user-role-${esc(u.username)}">${u.role === 'super' ? 'Super admin' : 'Staff'}</span>
+            ${u.mustChange ? '<span class="pill" title="Their password does not meet the new rules – they must choose a new one at their next login">new password needed</span>' : ''}</td>
+          <td class="date-cell" id="user-last-${esc(u.username)}">${lastLogin(u)}</td>
           <td class="date-cell">${fmt(u.created)}</td>
           <td style="text-align:right;white-space:nowrap">
+            ${u.username === me || (u.role === 'super' && supers() <= 1) ? '' : `<button class="btn btn-sm" data-urole="${esc(u.username)}" data-role="${u.role === 'super' ? 'staff' : 'super'}" id="user-makerole-${esc(u.username)}">${u.role === 'super' ? 'Make staff' : 'Make super admin'}</button>`}
             <button class="btn btn-sm" data-ureset="${esc(u.username)}" id="user-reset-${esc(u.username)}">Reset password</button>
             ${u.username === me || users.length <= 1 ? '' : `<button class="btn btn-sm btn-danger" data-udel="${esc(u.username)}" id="user-del-${esc(u.username)}">Remove</button>`}
           </td>
         </tr>
         ${resetting === u.username ? `
-        <tr><td colspan="3" style="background:#fafbfc">
+        <tr><td colspan="4" style="background:#fafbfc">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <span>New password for <strong>${esc(u.username)}</strong>:</span>
-            <input class="input" id="user-reset-pw" type="text" minlength="8" style="max-width:220px" value="${genPassword()}">
+            <input class="input" id="user-reset-pw" type="text" minlength="${state.minPassword}" style="max-width:220px" value="${genPassword()}">
             <button class="btn btn-primary btn-sm" data-usave="${esc(u.username)}" id="user-reset-save">Save password</button>
             <button class="btn btn-ghost btn-sm" data-ucancel id="user-reset-cancel">Cancel</button>
           </div>
@@ -2301,7 +2317,7 @@
       const password = $('#user-new-pw').value;
       busy(b, true, ' Adding…');
       try {
-        users = (await api('/users', { method: 'POST', body: { username, password } })).users;
+        users = (await api('/users', { method: 'POST', body: { username, password, role: $('#user-new-role').value } })).users;
         draw();
         e.target.reset();
         toast(`User <b>${esc(username)}</b> added. Password: <code>${esc(password)}</code> – copy it now, it won't be shown again.`, 'ok', 12000);
@@ -2313,10 +2329,24 @@
       const r = e.target.closest('[data-ureset]');
       if (r) { resetting = resetting === r.dataset.ureset ? null : r.dataset.ureset; draw(); const i = $('#user-reset-pw'); if (i) i.select(); return; }
       if (e.target.closest('[data-ucancel]')) { resetting = null; draw(); return; }
+      const ro = e.target.closest('[data-urole]');
+      if (ro) {
+        const who = ro.dataset.urole, role = ro.dataset.role;
+        const q = role === 'super'
+          ? `Make "${who}" a super admin? They will be able to see all users and when each last logged in, and add, change or remove accounts.`
+          : `Make "${who}" staff? They will no longer see the Users screen.`;
+        if (!confirm(q)) return;
+        try {
+          users = (await api(`/users/${encodeURIComponent(who)}/role`, { method: 'PUT', body: { role } })).users;
+          draw();
+          toast(`<b>${esc(who)}</b> is now ${role === 'super' ? 'a super admin' : 'staff'}.`);
+        } catch (ex) { toast(esc(ex.message), 'err'); }
+        return;
+      }
       const s = e.target.closest('[data-usave]');
       if (s) {
         const pw = $('#user-reset-pw').value;
-        if (pw.length < 8) return toast('Password must be at least 8 characters.', 'err');
+        if (pw.length < state.minPassword) return toast(`Password must be at least ${state.minPassword} characters.`, 'err');
         busy(s, true);
         try {
           await api(`/users/${encodeURIComponent(s.dataset.usave)}/password`, { method: 'PUT', body: { password: pw } });
@@ -2342,16 +2372,21 @@
      SETTINGS
      ========================================================= */
   async function renderSettings() {
-    const posts = await api('/posts');
+    const posts = state.mustChange ? [] : await api('/posts'); // everything else is blocked until the password is replaced
+    const min = state.minPassword;
     view.innerHTML = `
       <div class="page-head"><h1>Settings</h1></div>
+      ${state.mustChange ? `<div class="card" id="pw-required" style="border-color:#f59e0b;margin-bottom:16px"><div class="card-body">
+        <strong>Please choose a new password to continue.</strong>
+        <p class="hint" style="margin:6px 0 0">The password rules are now stricter (at least ${min} characters, nothing common or easy to guess, not containing your username). Your current password doesn't meet them. A few random words in a row make a good password.</p>
+      </div></div>` : ''}
       <div class="settings-grid">
         <form class="card" id="pw-form">
           <div class="card-head">Change password</div>
           <div class="card-body">
             <label class="field"><span>Current password</span><input type="password" id="pw-current" autocomplete="current-password" required></label>
-            <label class="field"><span>New password <small>min. 8 characters</small></span><input type="password" id="pw-new" autocomplete="new-password" minlength="8" required></label>
-            <label class="field"><span>Confirm new password</span><input type="password" id="pw-confirm" autocomplete="new-password" minlength="8" required></label>
+            <label class="field"><span>New password <small>min. ${min} characters, not a common password</small></span><input type="password" id="pw-new" autocomplete="new-password" minlength="${min}" required></label>
+            <label class="field"><span>Confirm new password</span><input type="password" id="pw-confirm" autocomplete="new-password" minlength="${min}" required></label>
             <button class="btn btn-primary" id="pw-save" type="submit">Update password</button>
           </div>
         </form>
@@ -2379,6 +2414,7 @@
         await api('/password', { method: 'POST', body: { current: $('#pw-current').value, next: $('#pw-new').value } });
         e.target.reset();
         toast('Password updated.');
+        if (state.mustChange) { state.mustChange = false; go('#/dashboard'); } // the rest of the panel is open again
       } catch (ex) { toast(esc(ex.message), 'err'); }
       busy(b, false);
     };

@@ -47,7 +47,53 @@ function load() {
     console.log('================================================\n');
     a = store.readJson(cfg.AUTH_FILE);
   }
+  // There must always be a super admin. Accounts made before roles existed have none, so the oldest account
+  // (the one with no "created" date, i.e. the first one ever made, else the earliest) becomes the super admin.
+  // The Users screen shows who it is; tools/set-role.js changes it.
+  if (a.users.length && !a.users.some((u) => u.role === 'super')) {
+    const oldest = [...a.users].sort((x, y) => (x.created ? Date.parse(x.created) : 0) - (y.created ? Date.parse(y.created) : 0))[0];
+    oldest.role = 'super';
+    store.writeJson(cfg.AUTH_FILE, a);
+    console.log(`Admin accounts: "${oldest.username}" is now the super admin (the first account made).`);
+  }
   return a;
+}
+
+/* ---------- password rules ----------
+ * At least 12 characters, and nothing that is on every attacker's list: common passwords (also with
+ * digits or symbols added, "P@ssw0rd2024"), keyboard/number runs, the username, the site's own name.
+ * No "must contain a capital and a symbol" rules – length and unpredictability matter more, and a
+ * few random words make a good password. */
+const MIN_PASSWORD = 12;
+const MAX_PASSWORD = 128;
+const COMMON = new Set(`password passw0rd pssw0rd psw0rd passwd pass welcome letmein admin administrator root test tester guest user login master
+  qwerty qwertyuiop qwertyui asdfgh asdfghjkl zxcvbn zxcvbnm abc abcd abcdef abcdefgh iloveyou monkey dragon sunshine princess football baseball
+  superman batman trustno shadow michael jennifer freedom whatever changeme default secret starwars cheese hello helloworld india delhi mumbai
+  cricket bollywood teenpatti casino stars star agent agents bigagents jackpot lottery winner money lucky happy love family computer internet
+  google facebook whatsapp telegram samsung welcome1 temp temporary newpassword mypassword yourpassword secretpassword`.split(/\s+/));
+const RUNS = ['1234567890', '0987654321', 'qwertyuiop', 'poiuytrewq', 'asdfghjkl', 'lkjhgfdsa', 'zxcvbnm', 'mnbvcxz', 'abcdefghijklmnopqrstuvwxyz', 'zyxwvutsrqponmlkjihgfedcba', '1qaz2wsx3edc', '1q2w3e4r5t6y'];
+const alnum = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+const unleet = (s) => String(s).toLowerCase().replace(/@/g, 'a').replace(/\$/g, 's').replace(/0/g, 'o').replace(/1/g, 'i').replace(/3/g, 'e').replace(/5/g, 's').replace(/7/g, 't').replace(/[^a-z]/g, '');
+
+/** '' if the password is acceptable, otherwise a sentence telling the person what to change. */
+function passwordProblem(password, username = '') {
+  if (typeof password !== 'string') return 'Please enter a password.';
+  if (password.length < MIN_PASSWORD) return `Password must be at least ${MIN_PASSWORD} characters. Three or four random words in a row work well.`;
+  if (password.length > MAX_PASSWORD) return `Password must be ${MAX_PASSWORD} characters or fewer.`;
+  const plain = alnum(password);
+  if (new Set(password.toLowerCase()).size < 6) return 'That password is too repetitive – please use more different characters.';
+  for (const run of RUNS) {
+    for (let i = 0; i + 8 <= run.length; i++) if (plain.includes(run.slice(i, i + 8))) return 'That password contains a keyboard or number sequence (like 12345678 or qwertyui) – please choose something less predictable.';
+  }
+  for (const v of [plain, unleet(password)]) {
+    const base = v.replace(/\d+$/, '');
+    if (COMMON.has(base)) return 'That password is far too common (even with numbers or symbols added) – please choose something less predictable.';
+    for (const w of COMMON) if (w.length >= 4 && base.length > w.length && base === w.repeat(base.length / w.length)) return 'That password is far too common – please choose something less predictable.';
+  }
+  const name = alnum(username);
+  if (name.length >= 3 && plain.includes(name)) return 'The password must not contain the username.';
+  if (/stars777|bigagents|agentsstars/.test(plain)) return "The password must not contain the site's name.";
+  return '';
 }
 
 function setPassword(username, password) {
@@ -56,8 +102,38 @@ function setPassword(username, password) {
   // sessions issued before this moment stop working (see userFrom)
   const pwChanged = Math.floor(Date.now() / 1000);
   const user = a.users.find((u) => u.username === username);
-  if (user) Object.assign(user, { salt, hash: hash(password, salt), pwChanged });
+  if (user) { Object.assign(user, { salt, hash: hash(password, salt), pwChanged }); delete user.mustChange; }
   else a.users.push({ username, salt, hash: hash(password, salt), pwChanged });
+  store.writeJson(cfg.AUTH_FILE, a);
+}
+
+/* ---------- roles, last login ---------- */
+const ROLES = ['super', 'staff'];
+const roleOf = (u) => (u && u.role === 'super' ? 'super' : 'staff');
+const isSuper = (username) => roleOf(load().users.find((u) => u.username === username)) === 'super';
+const superCount = () => load().users.filter((u) => u.role === 'super').length;
+
+/**
+ * Called after a successful login: remembers when, and whether this password meets today's rules.
+ * The password itself is only checked here, never stored. A password that no longer meets the rules
+ * makes the person choose a new one before they can use the panel (see mustChange).
+ */
+function recordLogin(username, password) {
+  const a = load();
+  const user = a.users.find((u) => u.username === username);
+  if (!user) return;
+  user.lastLogin = new Date().toISOString();
+  if (passwordProblem(password, username)) user.mustChange = true; else delete user.mustChange;
+  store.writeJson(cfg.AUTH_FILE, a);
+}
+const mustChange = (username) => !!(load().users.find((u) => u.username === username) || {}).mustChange;
+
+function setRole(username, role) {
+  if (!ROLES.includes(role)) throw new Error('Unknown role');
+  const a = load();
+  const user = a.users.find((u) => u.username === username);
+  if (!user) throw new Error('User not found');
+  user.role = role;
   store.writeJson(cfg.AUTH_FILE, a);
 }
 
@@ -160,14 +236,20 @@ function recordFailure(ip) {
 /* ---------- user management ---------- */
 const USERNAME_RE = /^[a-z0-9][a-z0-9._-]{2,31}$/; // 3–32 chars, lowercase
 const validUsername = (u) => USERNAME_RE.test(String(u || ''));
-const listUsers = () => load().users.map((u) => ({ username: u.username, created: u.created || null }));
+const listUsers = () => load().users.map((u) => ({
+  username: u.username, created: u.created || null, role: roleOf(u), lastLogin: u.lastLogin || null, mustChange: !!u.mustChange,
+}));
 const userExists = (username) => load().users.some((u) => u.username === username);
 
-function addUser(username, password) {
+function addUser(username, password, role = 'staff') {
   setPassword(username, password);
   const a = store.readJson(cfg.AUTH_FILE);
   const u = a.users.find((x) => x.username === username);
-  if (u && !u.created) { u.created = new Date().toISOString(); store.writeJson(cfg.AUTH_FILE, a); }
+  if (u) {
+    if (!u.created) u.created = new Date().toISOString();
+    u.role = ROLES.includes(role) ? role : 'staff';
+    store.writeJson(cfg.AUTH_FILE, a);
+  }
 }
 
 function deleteUser(username) {
@@ -176,7 +258,20 @@ function deleteUser(username) {
   store.writeJson(cfg.AUTH_FILE, a); // their session cookie stops working immediately (userFrom checks the list)
 }
 
+/** Only the super admin may continue (user list, accounts, roles). Use after requireAuth. */
+function requireSuper(req, res, next) {
+  if (!isSuper(req.user)) return res.status(403).json({ error: 'Only the super admin can do that.' });
+  next();
+}
+
+/** A password that no longer meets the rules has to be replaced before anything else is allowed. Use after requireAuth. */
+function requirePasswordOk(req, res, next) {
+  if (!mustChange(req.user) || (req.method === 'POST' && req.path === '/password')) return next();
+  res.status(403).json({ error: 'Your password does not meet the new password rules – please choose a new one to continue.', code: 'password-change' });
+}
+
 module.exports = {
   load, setPassword, verify, verifyAsync, issue, clear, userFrom, requireAuth, rateLimited, recordFailure,
   validUsername, listUsers, userExists, addUser, deleteUser,
+  MIN_PASSWORD, passwordProblem, recordLogin, mustChange, isSuper, superCount, setRole, ROLES, requireSuper, requirePasswordOk,
 };

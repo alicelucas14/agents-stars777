@@ -134,13 +134,17 @@ app.post('/api/login', publicJson, async (req, res, next) => {
     auth.recordFailure(ip);
     return res.status(401).json({ error: 'Invalid username or password' });
   }
+  // remember the time of this login, and whether the password meets the current rules (see auth.recordLogin);
+  // a problem writing that down must not stop someone from logging in
+  try { auth.recordLogin(username, password); } catch (e) { console.error('Could not record the login:', e.message); }
   auth.issue(res, username, req.secure);
   res.json({ user: username });
 });
 app.post('/api/logout', (req, res) => { auth.clear(res, req); res.json({ ok: true }); });
 app.get('/api/me', (req, res) => {
   const user = auth.userFrom(req);
-  return user ? res.json({ user, siteUrl: cfg.SITE_URL, siteName: cfg.SITE_NAME }) : res.status(401).json({ error: 'Not logged in' });
+  if (!user) return res.status(401).json({ error: 'Not logged in' });
+  res.json({ user, isSuper: auth.isSuper(user), mustChangePassword: auth.mustChange(user), minPassword: auth.MIN_PASSWORD, siteUrl: cfg.SITE_URL, siteName: cfg.SITE_NAME });
 });
 
 /* ---------- agent sign-ups (public registration form on / and /register/) ---------- */
@@ -176,6 +180,7 @@ api.use((req, res, next) => {
   next();
 });
 api.use(auth.requireAuth);
+api.use(auth.requirePasswordOk); // a password that fails today's rules must be replaced before anything else
 api.use(adminJson);
 
 /* ---------- posts ---------- */
@@ -508,40 +513,61 @@ api.delete('/signups/:id', (req, res) => res.json({ items: signups.remove(req.pa
 api.post('/password', (req, res) => {
   const { current, next: pw } = req.body || {};
   if (!auth.verify(req.user, String(current || ''))) return res.status(400).json({ error: 'Current password is incorrect' });
-  if (!pw || String(pw).length < 8) return res.status(400).json({ error: 'New password must be at least 8 characters' });
+  const problem = auth.passwordProblem(typeof pw === 'string' ? pw : '', req.user);
+  if (problem) return res.status(400).json({ error: problem });
+  if (String(pw) === String(current)) return res.status(400).json({ error: 'Please choose a password different from the current one.' });
   auth.setPassword(req.user, String(pw)); // logs out this user's other sessions
   auth.issue(res, req.user, req.secure);  // …but keeps this browser logged in
   res.json({ ok: true });
 });
 
 /* ---------- users ---------- */
-api.get('/users', (req, res) => res.json({ users: auth.listUsers(), me: req.user }));
+// Seeing the accounts, their last login, and adding / removing / changing them is for the super admin only.
+// (Every user can still change their own password above.)
+api.get('/users', auth.requireSuper, (req, res) => res.json({ users: auth.listUsers(), me: req.user }));
 
-api.post('/users', (req, res) => {
-  const username = String((req.body || {}).username || '').trim().toLowerCase();
-  const pw = String((req.body || {}).password || '');
+api.post('/users', auth.requireSuper, (req, res) => {
+  const b = req.body || {};
+  const username = typeof b.username === 'string' ? b.username.trim().toLowerCase() : '';
+  const pw = typeof b.password === 'string' ? b.password : '';
+  const role = b.role === 'super' ? 'super' : 'staff';
   if (!auth.validUsername(username)) return res.status(400).json({ error: 'Username must be 3–32 characters: lowercase letters, numbers, dot, dash or underscore.' });
   if (auth.userExists(username)) return res.status(409).json({ error: `User "${username}" already exists.` });
-  if (pw.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
-  auth.addUser(username, pw);
+  const problem = auth.passwordProblem(pw, username);
+  if (problem) return res.status(400).json({ error: problem });
+  auth.addUser(username, pw, role);
   res.json({ users: auth.listUsers() });
 });
 
-api.put('/users/:username/password', (req, res) => {
+api.put('/users/:username/password', auth.requireSuper, (req, res) => {
   const { username } = req.params;
-  const pw = String((req.body || {}).password || '');
+  const b = req.body || {};
+  const pw = typeof b.password === 'string' ? b.password : '';
   if (!auth.userExists(username)) return res.status(404).json({ error: 'User not found.' });
-  if (pw.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+  const problem = auth.passwordProblem(pw, username);
+  if (problem) return res.status(400).json({ error: problem });
   auth.setPassword(username, pw); // logs that user out everywhere
   if (username === req.user) auth.issue(res, req.user, req.secure); // except the admin doing it
   res.json({ ok: true });
 });
 
-api.delete('/users/:username', (req, res) => {
+api.put('/users/:username/role', auth.requireSuper, (req, res) => {
+  const { username } = req.params;
+  const role = (req.body || {}).role;
+  if (!auth.ROLES.includes(role)) return res.status(400).json({ error: 'Role must be super or staff.' });
+  if (!auth.userExists(username)) return res.status(404).json({ error: 'User not found.' });
+  if (username === req.user) return res.status(400).json({ error: "You can't change your own role – ask another super admin." });
+  if (role === 'staff' && auth.isSuper(username) && auth.superCount() <= 1) return res.status(400).json({ error: 'There must always be at least one super admin.' });
+  auth.setRole(username, role);
+  res.json({ users: auth.listUsers() });
+});
+
+api.delete('/users/:username', auth.requireSuper, (req, res) => {
   const { username } = req.params;
   if (!auth.userExists(username)) return res.status(404).json({ error: 'User not found.' });
   if (username === req.user) return res.status(400).json({ error: "You can't delete the account you're logged in with." });
   if (auth.listUsers().length <= 1) return res.status(400).json({ error: "You can't delete the last user." });
+  if (auth.isSuper(username) && auth.superCount() <= 1) return res.status(400).json({ error: "You can't delete the only super admin." });
   auth.deleteUser(username);
   res.json({ users: auth.listUsers() });
 });

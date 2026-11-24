@@ -96,6 +96,20 @@ archives (with pagination), "similar posts", previous/next links, `sitemap.xml`,
   if the site stops working through Cloudflare); `--remove` undoes it. Re-run it to refresh
   Cloudflare's address list.
 
+### Admin accounts
+
+- **Passwords:** at least 12 characters, not a common password (also with digits/symbols added),
+  no keyboard/number runs, not containing the username. Applies to new accounts, resets and
+  password changes (`cms/auth.js` `passwordProblem`). An account whose password doesn't meet the rules
+  is asked to choose a new one at its next login – nothing else in the panel works until it does.
+- **Roles:** `super` and `staff`. Only a super admin sees the Users screen (accounts, each person's
+  last login, add / remove / reset passwords / change roles) – staff can't, and the server refuses the
+  `/api/users` calls too. Accounts made before roles existed are all staff, except the oldest one,
+  which becomes the super admin automatically on first start (the log says which). Change roles in the
+  Users screen, or on the server: `node tools/set-role.js <username> <super|staff>`. There is always
+  at least one super admin, and nobody can change their own role.
+- `node tools/set-password.js <username> <password>` follows the same password rules.
+
 ## Notes
 - Static pages (homepage, game pages, etc.) are plain HTML in `site/`. Their content
   is not edited through the admin panel, but their SEO meta is (SEO → Static Pages).
